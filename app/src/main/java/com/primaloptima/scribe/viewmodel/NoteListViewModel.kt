@@ -188,7 +188,7 @@ When you come back, read it aloud. The sentences that make you stumble are the s
                 val note = withContext(Dispatchers.IO) { db.noteDao().getById(noteId) }
                 if (note?.externalUri != null) {
                     try {
-                        SAFHelper.deleteFile(getApplication(), Uri.parse(note.externalUri))
+                        SAFHelper.deleteDocument(getApplication(), Uri.parse(note.externalUri))
                     } catch (_: Exception) {}
                 }
             } catch (_: Exception) {}
