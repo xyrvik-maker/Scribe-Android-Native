@@ -160,4 +160,26 @@ class BookViewModel(application: Application) : AndroidViewModel(application) {
             withContext(Dispatchers.Main) { reload() }
         }
     }
+
+    fun duplicateNote(noteId: String, onCreated: (String) -> Unit = {}) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val original = db.noteDao().getById(noteId) ?: return@launch
+            val newId = UUID.randomUUID().toString()
+            val now   = System.currentTimeMillis()
+            db.noteDao().insert(
+                original.copy(
+                    id           = newId,
+                    name         = "${original.name} (copy)",
+                    externalUri  = null,   // copy stays in the DB vault only
+                    createdAt    = now,
+                    updatedAt    = now
+                )
+            )
+            db.bookDao().touch(bookId, now)
+            withContext(Dispatchers.Main) {
+                reload()
+                onCreated(newId)
+            }
+        }
+    }
 }

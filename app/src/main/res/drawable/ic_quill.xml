@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Feather/quill pen -->
+    <path
+        android:fillColor="?attr/colorOnSurface"
+        android:pathData="M20.71,4.04C21.1,3.65 21.1,3.01 20.71,2.63L19.38,1.29C19,-0.09 18.35,-0.09 17.96,1.29L17,2.25l2.75,2.75 0.96,-0.96zM3,17.25V21h3.75L16.56,9.19l-2.75,-2.75L3,17.25z"/>
+    <!-- Quill tail decorative swoosh -->
+    <path
+        android:fillColor="?attr/colorOnSurface"
+        android:alpha="0.4"
+        android:pathData="M20,2C17,5 13,8 8,9.5C9.5,8.5 11,6 12,3.5C10,5 7.5,8.5 6,11.5C7,10 8.5,9 9,9C6,11 4,14 3,17C5,14 7,12 9,11C7,13 5.5,15.5 5,18C7,15 9,13 12,12C10,13 8,15 7,17C9,14.5 12,13 15,12.5C13,14 11.5,16 11,18C13,15 15.5,13 18,12.5z"/>
+</vector>

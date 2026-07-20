@@ -20,6 +20,7 @@ class FileTreeAdapter(
     private var items: List<BookViewModel.TreeItem> = emptyList(),
     private val onNoteClick: (Note) -> Unit,
     private val onFolderClick: (Folder) -> Unit,
+    private val onNoteLongClick: ((Note) -> Unit)? = null,
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
     companion object {
@@ -74,6 +75,12 @@ class FileTreeAdapter(
                 h.icon.setImageResource(R.drawable.ic_edit)
                 h.name.text = item.note.name
                 h.itemView.setOnClickListener { onNoteClick(item.note) }
+                if (onNoteLongClick != null) {
+                    h.itemView.setOnLongClickListener {
+                        onNoteLongClick.invoke(item.note)
+                        true
+                    }
+                }
             }
         }
     }

@@ -1,49 +1,73 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:padding="6dp">
+    android:padding="8dp">
 
-    <!-- Book cover (portrait ratio, fixed height) -->
     <com.google.android.material.card.MaterialCardView
         android:layout_width="match_parent"
-        android:layout_height="160dp"
-        app:cardCornerRadius="8dp"
+        android:layout_height="190dp"
+        app:cardCornerRadius="16dp"
         app:cardElevation="3dp"
-        xmlns:app="http://schemas.android.com/apk/res-auto">
+        app:strokeWidth="0dp">
 
-        <ImageView
-            android:id="@+id/img_book_cover"
+        <FrameLayout
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:scaleType="centerCrop"
-            android:src="@drawable/ic_folder" />
+            android:layout_height="match_parent">
+
+            <!-- Cover image (loaded from URI, or shows gradient) -->
+            <ImageView
+                android:id="@+id/img_book_cover"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="centerCrop" />
+
+            <!-- Gradient overlay at the bottom for legibility -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="64dp"
+                android:layout_gravity="bottom"
+                android:background="@drawable/gradient_cover_scrim"
+                android:visibility="gone"
+                android:id="@+id/cover_scrim" />
+
+            <!-- Initial letter overlay (shown when no photo cover) -->
+            <TextView
+                android:id="@+id/tv_book_initial"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:textSize="72sp"
+                android:textStyle="bold"
+                android:textColor="#FFFFFFFF"
+                android:alpha="0.75"
+                android:fontFamily="serif"
+                android:visibility="gone" />
+        </FrameLayout>
     </com.google.android.material.card.MaterialCardView>
 
-    <!-- Book title -->
     <TextView
         android:id="@+id/tv_book_title"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:ellipsize="end"
-        android:maxLines="2"
-        android:textSize="13sp"
+        android:layout_marginTop="10dp"
+        android:textSize="14sp"
         android:textStyle="bold"
-        android:gravity="center_horizontal" />
+        android:gravity="center_horizontal"
+        android:maxLines="2"
+        android:ellipsize="end" />
 
-    <!-- Subtitle (note count) -->
     <TextView
         android:id="@+id/tv_book_subtitle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="2dp"
-        android:ellipsize="end"
-        android:maxLines="1"
         android:textSize="11sp"
         android:alpha="0.5"
-        android:gravity="center_horizontal" />
+        android:gravity="center_horizontal"
+        android:maxLines="1"
+        android:ellipsize="end" />
 
 </LinearLayout>

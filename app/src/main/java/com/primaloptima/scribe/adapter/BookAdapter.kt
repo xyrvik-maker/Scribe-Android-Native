@@ -11,6 +11,7 @@ import androidx.recyclerview.widget.RecyclerView
 import coil.load
 import com.primaloptima.scribe.R
 import com.primaloptima.scribe.data.Book
+import com.primaloptima.scribe.util.BookCoverUtil
 
 class BookAdapter(
     private var items: List<Book> = emptyList(),
@@ -28,6 +29,9 @@ class BookAdapter(
         val cover: ImageView = root.findViewById(R.id.img_book_cover)
         val title: TextView = root.findViewById(R.id.tv_book_title)
         val subtitle: TextView? = root.findViewById(R.id.tv_book_subtitle)
+        // Grid-only: initial letter overlay and scrim
+        val initial: TextView? = root.findViewById(R.id.tv_book_initial)
+        val scrim: View? = root.findViewById(R.id.cover_scrim)
     }
 
     override fun getItemViewType(position: Int): Int =
@@ -42,16 +46,27 @@ class BookAdapter(
     override fun onBindViewHolder(holder: BookVH, position: Int) {
         val book = items[position]
         holder.title.text = book.title
-        holder.subtitle?.text = ""  // could show note count later
+        holder.subtitle?.text = ""
 
         if (book.coverUri != null) {
+            // User has set a photo cover — load it, hide initial
+            holder.cover.scaleType = ImageView.ScaleType.CENTER_CROP
             holder.cover.load(Uri.parse(book.coverUri)) {
                 crossfade(true)
                 placeholder(R.drawable.ic_folder)
             }
+            holder.initial?.visibility = View.GONE
+            holder.scrim?.visibility = View.GONE
         } else {
-            holder.cover.setImageResource(R.drawable.ic_folder)
-            holder.cover.scaleType = ImageView.ScaleType.CENTER
+            // No photo: render a gradient + big initial letter
+            val gradient = BookCoverUtil.makeGradient(book.title)
+            holder.cover.scaleType = ImageView.ScaleType.FIT_XY
+            holder.cover.setImageDrawable(gradient)
+            holder.initial?.let { tv ->
+                tv.text = BookCoverUtil.initial(book.title)
+                tv.visibility = View.VISIBLE
+            }
+            holder.scrim?.visibility = View.GONE
         }
 
         holder.root.setOnClickListener { onClick(book) }

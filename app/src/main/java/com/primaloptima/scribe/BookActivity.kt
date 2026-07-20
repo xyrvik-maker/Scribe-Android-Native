@@ -256,21 +256,34 @@ class BookActivity : AppCompatActivity() {
     }
 
     private fun showNoteMenu(note: Note) {
-        val popup = PopupMenu(this, rvFiles)
-        popup.menu.apply {
-            add(0, 0, 0, getString(R.string.action_open))
-            add(0, 1, 1, getString(R.string.action_rename))
-            add(0, 2, 2, getString(R.string.action_delete))
-        }
-        popup.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                0 -> openNote(note)
-                1 -> showRenameNoteDialog(note)
-                2 -> confirmDeleteNote(note)
+        AlertDialog.Builder(this)
+            .setTitle(note.name)
+            .setItems(arrayOf(
+                getString(R.string.action_open),
+                getString(R.string.action_rename),
+                getString(R.string.action_duplicate),
+                getString(R.string.action_float),
+                getString(R.string.action_delete)
+            )) { _, which ->
+                when (which) {
+                    0 -> openNote(note)
+                    1 -> showRenameNoteDialog(note)
+                    2 -> vm.duplicateNote(note.id) { newId ->
+                        Toast.makeText(this, "Duplicated", Toast.LENGTH_SHORT).show()
+                        openNoteById(newId)
+                    }
+                    3 -> {
+                        // Open in MainActivity; float window triggered from the editor menu
+                        val intent = Intent(this, MainActivity::class.java)
+                            .putExtra(MainActivity.EXTRA_BOOK_ID, vm.bookId)
+                            .putExtra(MainActivity.EXTRA_NOTE_ID, note.id)
+                            .putExtra("openInFloat", true)
+                        startActivity(intent)
+                    }
+                    4 -> confirmDeleteNote(note)
+                }
             }
-            true
-        }
-        popup.show()
+            .show()
     }
 
     // ── Dialogs ───────────────────────────────────────────────────────────────

@@ -41,7 +41,12 @@ import com.primaloptima.scribe.view.ShortcutBarView
 import com.primaloptima.scribe.viewmodel.BookViewModel
 import com.primaloptima.scribe.viewmodel.EditorViewModel
 import com.primaloptima.scribe.viewmodel.NoteListViewModel
+import androidx.lifecycle.lifecycleScope
+import com.primaloptima.scribe.util.model.PinnedItem
 import com.primaloptima.scribe.viewmodel.ShortcutsViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : AppCompatActivity() {
 
@@ -180,6 +185,9 @@ class MainActivity : AppCompatActivity() {
         drawerLayout.addDrawerListener(object : DrawerLayout.SimpleDrawerListener() {
             override fun onDrawerClosed(drawerView: View) {
                 if (drawerView === leftDrawer) editor.requestFocus()
+            }
+            override fun onDrawerOpened(drawerView: View) {
+                if (drawerView === rightDrawer) refreshPinnedSlots()
             }
         })
     }
@@ -394,7 +402,8 @@ class MainActivity : AppCompatActivity() {
     private fun setupFileTree() {
         fileTreeAdapter = FileTreeAdapter(
             onNoteClick = { note -> openNote(note) },
-            onFolderClick = { /* fold/unfold handled by adapter */ }
+            onFolderClick = { /* fold/unfold handled by adapter */ },
+            onNoteLongClick = { note -> showNoteLongPressMenu(note) }
         )
         rvFileTree.layoutManager = LinearLayoutManager(this)
         rvFileTree.adapter = fileTreeAdapter
@@ -429,21 +438,142 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showNoteLongPressMenu(note: Note) {
-        val items = arrayOf("Rename", "Move to…", "Delete", "View History")
+        val prefs = (application as ScribeApp).prefs
+        val pinned = prefs.getPinned()
+        val isPinnedTop    = pinned.any { it.slot == "top"    && it.noteId == note.id }
+        val isPinnedBottom = pinned.any { it.slot == "bottom" && it.noteId == note.id }
+
+        val items = arrayOf(
+            "Rename",
+            "Move to…",
+            "Duplicate",
+            "Open in floating window",
+            if (isPinnedTop)    "Unpin from panel (top)"    else "Pin to panel (top)",
+            if (isPinnedBottom) "Unpin from panel (bottom)" else "Pin to panel (bottom)",
+            "Export…",
+            "Delete",
+            "View History"
+        )
         AlertDialog.Builder(this)
             .setTitle(note.name)
             .setItems(items) { _, which ->
                 when (which) {
                     0 -> showRenameNoteDialog(note)
                     1 -> showMoveNoteDialog(note)
-                    2 -> confirmDeleteNote(note)
-                    3 -> {
-                        (application as ScribeApp).prefs.activeNoteId = note.id
+                    2 -> noteListVm.duplicateNote(note.id)
+                    3 -> floatingWindowManager.openWindow(note)
+                    4 -> togglePinNote(note.id, "top",    isPinnedTop)
+                    5 -> togglePinNote(note.id, "bottom", isPinnedBottom)
+                    6 -> showExportDialog(editorVm.activeNote.value?.let { if (it.id == note.id) it else null } ?: note)
+                    7 -> confirmDeleteNote(note)
+                    8 -> {
+                        prefs.activeNoteId = note.id
                         startActivity(Intent(this, HistoryActivity::class.java))
                     }
                 }
             }
             .show()
+    }
+
+    // ── Pin slots ──────────────────────────────────────────────────────────────
+
+    private fun togglePinNote(noteId: String, slot: String, alreadyPinned: Boolean) {
+        val prefs = (application as ScribeApp).prefs
+        val pinned = prefs.getPinned().toMutableList()
+        if (alreadyPinned) {
+            pinned.removeAll { it.noteId == noteId && it.slot == slot }
+        } else {
+            pinned.removeAll { it.slot == slot }
+            pinned.add(PinnedItem(slot = slot, noteId = noteId))
+        }
+        prefs.savePinned(pinned)
+        refreshPinnedSlots()
+    }
+
+    private fun refreshPinnedSlots() {
+        val pinned  = (application as ScribeApp).prefs.getPinned()
+        val topId   = pinned.firstOrNull { it.slot == "top" }?.noteId
+        val bottomId = pinned.firstOrNull { it.slot == "bottom" }?.noteId
+        val divider = findViewById<View>(R.id.pinned_divider)
+
+        populatePinnedSlot(pinnedTop,    topId)
+        populatePinnedSlot(pinnedBottom, bottomId)
+        divider.visibility = if (topId != null && bottomId != null) View.VISIBLE else View.GONE
+    }
+
+    private fun populatePinnedSlot(container: FrameLayout, noteId: String?) {
+        container.removeAllViews()
+        val lp = container.layoutParams as? LinearLayout.LayoutParams
+        if (noteId == null) {
+            container.visibility = View.GONE
+            lp?.weight = 0f
+            container.layoutParams = lp
+            return
+        }
+        lifecycleScope.launch {
+            val note = withContext(Dispatchers.IO) {
+                (application as ScribeApp).database.noteDao().getById(noteId)
+            } ?: return@launch
+            container.addView(buildPinnedNoteView(note))
+            container.visibility = View.VISIBLE
+            lp?.weight = 1f
+            container.layoutParams = lp
+        }
+    }
+
+    private fun buildPinnedNoteView(note: Note): View {
+        val d = { v: Int -> (v * resources.displayMetrics.density).toInt() }
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+            // Header: 📌 title + unpin button
+            val header = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(d(12), d(8), d(4), d(4))
+            }
+            header.addView(TextView(context).apply {
+                text = "\uD83D\uDCCC ${note.name}"
+                textSize = 12f
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            header.addView(ImageButton(context).apply {
+                setImageResource(R.drawable.ic_close)
+                setBackgroundResource(android.R.color.transparent)
+                layoutParams = LinearLayout.LayoutParams(d(32), d(32))
+                alpha = 0.4f
+                setOnClickListener {
+                    val prefs = (application as ScribeApp).prefs
+                    prefs.savePinned(prefs.getPinned().filter { it.noteId != note.id })
+                    refreshPinnedSlots()
+                }
+            })
+            addView(header)
+            addView(View(context).apply {
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
+                setBackgroundColor(0x1A000000)
+            })
+            // Content scroll
+            val scroll = ScrollView(context).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+                isNestedScrollingEnabled = false
+            }
+            scroll.addView(TextView(context).apply {
+                text = note.content.ifEmpty { "(empty)" }
+                textSize = 12f
+                setPadding(d(12), d(6), d(12), d(12))
+                alpha = 0.8f
+            })
+            addView(scroll)
+            setOnClickListener { openNote(note) }
+        }
     }
 
     private fun showRenameNoteDialog(note: Note) {

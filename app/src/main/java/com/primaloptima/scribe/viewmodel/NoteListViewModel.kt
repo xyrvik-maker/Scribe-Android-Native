@@ -196,6 +196,21 @@ When you come back, read it aloud. The sentences that make you stumble are the s
         }
     }
 
+    /** Duplicate [noteId] into the same book/folder as a DB-only copy (no SAF write). */
+    fun duplicateNote(noteId: String) {
+        viewModelScope.launch {
+            val original = withContext(Dispatchers.IO) { db.noteDao().getById(noteId) } ?: return@launch
+            val newNote  = original.copy(
+                id          = java.util.UUID.randomUUID().toString(),
+                name        = "${original.name} (copy)",
+                externalUri = null,
+                createdAt   = System.currentTimeMillis(),
+                updatedAt   = System.currentTimeMillis()
+            )
+            withContext(Dispatchers.IO) { db.noteDao().insert(newNote) }
+        }
+    }
+
     fun createFolder(bookId: String = Note.DEFAULT_BOOK_ID, path: String) {
         viewModelScope.launch {
             val cleaned = if (path.startsWith("/")) path else "/$path"

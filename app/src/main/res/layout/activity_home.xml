@@ -7,86 +7,98 @@
     android:layout_height="match_parent"
     tools:context=".HomeActivity">
 
+    <!-- App bar -->
     <com.google.android.material.appbar.AppBarLayout
-        android:id="@+id/app_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:elevation="0dp"
-        app:liftOnScroll="true"
-        app:liftOnScrollTargetViewId="@id/rv_books">
+        app:liftOnScroll="true">
 
-        <!-- Top bar: app name + view-mode toggle + overflow menu -->
+        <!-- Top bar: "Scribe" title + controls -->
         <LinearLayout
             android:id="@+id/home_top_bar"
             android:layout_width="match_parent"
-            android:layout_height="56dp"
+            android:layout_height="64dp"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:paddingStart="16dp"
-            android:paddingEnd="4dp">
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp">
+
+            <!-- Quill mark + app name -->
+            <ImageView
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:src="@drawable/ic_quill"
+                android:tint="@color/scribe_amber"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="2dp"
+                android:contentDescription="Scribe" />
 
             <TextView
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
+                android:layout_marginStart="6dp"
                 android:text="@string/app_name"
-                android:textSize="22sp"
-                android:textStyle="bold" />
+                android:textSize="24sp"
+                android:textStyle="bold"
+                android:fontFamily="serif"
+                android:letterSpacing="-0.01" />
 
-            <!-- View mode toggle (shelve ↔ list) – icon changes, no label -->
             <ImageButton
                 android:id="@+id/btn_view_mode"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:src="@drawable/ic_sidebar"
-                android:contentDescription="@string/cd_view_mode" />
+                android:contentDescription="Toggle view" />
 
             <ImageButton
                 android:id="@+id/btn_overflow"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:src="@drawable/ic_more_vert"
-                android:contentDescription="@string/cd_more_options" />
+                android:contentDescription="Sort" />
         </LinearLayout>
 
         <!-- Search bar -->
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="48dp"
             android:orientation="horizontal"
+            android:gravity="center_vertical"
             android:paddingStart="12dp"
             android:paddingEnd="12dp"
-            android:paddingBottom="10dp">
+            android:paddingBottom="8dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="42dp"
+                android:layout_height="36dp"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:paddingStart="12dp"
-                android:paddingEnd="8dp"
-                android:background="@drawable/bg_find_input">
+                android:background="@drawable/bg_find_input"
+                android:paddingStart="10dp"
+                android:paddingEnd="4dp">
 
                 <ImageView
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
                     android:src="@drawable/ic_search"
-                    android:alpha="0.5" />
+                    android:alpha="0.4"
+                    android:layout_marginEnd="6dp"
+                    android:contentDescription="Search" />
 
                 <EditText
                     android:id="@+id/et_search"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:layout_marginStart="8dp"
-                    android:hint="@string/search_books"
                     android:background="@null"
+                    android:hint="Search books…"
+                    android:textSize="14sp"
                     android:singleLine="true"
-                    android:textSize="15sp"
-                    android:imeOptions="actionSearch"
-                    android:inputType="text" />
+                    android:imeOptions="actionSearch" />
 
                 <ImageButton
                     android:id="@+id/btn_search_clear"
@@ -94,13 +106,14 @@
                     android:layout_height="32dp"
                     android:background="?attr/selectableItemBackgroundBorderless"
                     android:src="@drawable/ic_close"
+                    android:alpha="0.5"
                     android:visibility="gone"
-                    android:contentDescription="@string/cd_clear_search" />
+                    android:contentDescription="Clear" />
             </LinearLayout>
         </LinearLayout>
     </com.google.android.material.appbar.AppBarLayout>
 
-    <!-- Books grid / list -->
+    <!-- Book grid / list -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rv_books"
         android:layout_width="match_parent"
@@ -108,41 +121,45 @@
         android:clipToPadding="false"
         android:paddingTop="8dp"
         android:paddingBottom="88dp"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp"
         app:layout_behavior="@string/appbar_scrolling_view_behavior" />
 
-    <!-- Empty state -->
+    <!-- Empty state (centered) -->
     <LinearLayout
         android:id="@+id/empty_state"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
         android:orientation="vertical"
         android:gravity="center"
-        android:visibility="gone">
+        android:paddingBottom="80dp"
+        android:visibility="gone"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
         <ImageView
-            android:layout_width="64dp"
-            android:layout_height="64dp"
-            android:src="@drawable/ic_folder"
-            android:alpha="0.3" />
+            android:layout_width="72dp"
+            android:layout_height="72dp"
+            android:src="@drawable/ic_quill"
+            android:tint="@color/scribe_amber"
+            android:alpha="0.55"
+            android:contentDescription="No books" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:text="@string/no_books_yet"
-            android:textSize="16sp"
-            android:alpha="0.5" />
+            android:layout_marginTop="20dp"
+            android:text="Your shelf is empty"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:fontFamily="serif" />
 
         <TextView
-            android:layout_width="wrap_content"
+            android:layout_width="280dp"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="@string/tap_plus_to_create"
-            android:textSize="13sp"
-            android:alpha="0.35" />
+            android:layout_marginTop="8dp"
+            android:text="Tap the button below to create your first book and start writing."
+            android:textSize="14sp"
+            android:alpha="0.55"
+            android:gravity="center"
+            android:lineSpacingMultiplier="1.4" />
     </LinearLayout>
 
     <!-- FAB -->
@@ -152,8 +169,9 @@
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|end"
         android:layout_margin="20dp"
-        android:src="@drawable/ic_add"
-        android:contentDescription="@string/cd_new_book"
-        app:fabSize="normal" />
+        android:contentDescription="New Book"
+        app:srcCompat="@drawable/ic_add"
+        app:backgroundTint="@color/scribe_amber"
+        app:tint="@color/md_theme_light_onPrimary" />
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>
