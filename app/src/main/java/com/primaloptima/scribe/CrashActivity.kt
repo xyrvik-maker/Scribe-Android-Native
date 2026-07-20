@@ -3,14 +3,14 @@ package com.primaloptima.scribe
 import android.os.Bundle
 import android.widget.ScrollView
 import android.widget.TextView
-import androidx.appcompat.app.AppCompatActivity
+import android.app.Activity
 
 /**
  * Bare-bones crash reporter. Uses only system views and a built-in Android
  * theme so it can never itself crash due to missing resources or a broken
  * custom theme.
  */
-class CrashActivity : AppCompatActivity() {
+class CrashActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
