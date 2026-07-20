@@ -29,9 +29,8 @@ import androidx.lifecycle.Observer
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.floatingactionbutton.FloatingActionButton
-import com.primaloptima.scribe.adapter.NoteAdapter
+import com.primaloptima.scribe.adapter.FileTreeAdapter
 import com.primaloptima.scribe.adapter.OutlineAdapter
-import com.primaloptima.scribe.data.Folder
 import com.primaloptima.scribe.data.Note
 import com.primaloptima.scribe.util.ExportHelper
 import com.primaloptima.scribe.util.ThemeManager
@@ -39,14 +38,21 @@ import com.primaloptima.scribe.util.model.AppTheme
 import com.primaloptima.scribe.util.model.ShortcutAction
 import com.primaloptima.scribe.view.ScribeEditText
 import com.primaloptima.scribe.view.ShortcutBarView
+import com.primaloptima.scribe.viewmodel.BookViewModel
 import com.primaloptima.scribe.viewmodel.EditorViewModel
 import com.primaloptima.scribe.viewmodel.NoteListViewModel
 import com.primaloptima.scribe.viewmodel.ShortcutsViewModel
 
 class MainActivity : AppCompatActivity() {
 
+    companion object {
+        const val EXTRA_NOTE_ID = "noteId"
+        const val EXTRA_BOOK_ID = "bookId"
+    }
+
     // ViewModels
     private val editorVm: EditorViewModel by viewModels()
+    private val bookVm: BookViewModel by viewModels()
     private val noteListVm: NoteListViewModel by viewModels()
     private val shortcutsVm: ShortcutsViewModel by viewModels()
 
@@ -66,8 +72,11 @@ class MainActivity : AppCompatActivity() {
 
     // Left drawer
     private lateinit var leftDrawer: LinearLayout
-    private lateinit var rvNotes: RecyclerView
+    private lateinit var rvFileTree: RecyclerView
     private lateinit var tvVaultName: TextView
+
+    // Floating reference windows
+    private lateinit var floatingWindowManager: FloatingWindowManager
 
     // Right drawer
     private lateinit var rightDrawer: LinearLayout
@@ -88,7 +97,7 @@ class MainActivity : AppCompatActivity() {
     private var findCaseSensitive = false
 
     // Adapters
-    private lateinit var noteAdapter: NoteAdapter
+    private lateinit var fileTreeAdapter: FileTreeAdapter
     private lateinit var outlineAdapter: OutlineAdapter
 
     // SAF folder picker
@@ -114,12 +123,17 @@ class MainActivity : AppCompatActivity() {
         setupEditor()
         setupShortcutBar()
         setupFindBar()
-        setupNoteList()
+        setupFileTree()
         setupOutline()
         setupTopBar()
         setupRecoveryBanner()
         observeViewModels()
         handleBackPress()
+
+        // Load book + note passed from BookActivity
+        val bookId = intent.getStringExtra(EXTRA_BOOK_ID) ?: Note.DEFAULT_BOOK_ID
+        bookVm.init(bookId)
+        floatingWindowManager = FloatingWindowManager(this)
     }
 
     override fun onResume() {
@@ -149,7 +163,7 @@ class MainActivity : AppCompatActivity() {
         replaceInput     = findViewById(R.id.replace_input)
         tvMatchCount     = findViewById(R.id.tv_match_count)
         leftDrawer       = findViewById(R.id.left_drawer)
-        rvNotes          = findViewById(R.id.rv_notes)
+        rvFileTree       = findViewById(R.id.rv_file_tree)
         tvVaultName      = findViewById(R.id.tv_vault_name)
         rightDrawer      = findViewById(R.id.right_drawer)
         rvOutline        = findViewById(R.id.rv_outline)
@@ -375,41 +389,42 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ── Note list (left drawer) ────────────────────────────────────────────────
+    // ── File tree (left drawer) ────────────────────────────────────────────────
 
-    private fun setupNoteList() {
-        noteAdapter = NoteAdapter(
+    private fun setupFileTree() {
+        fileTreeAdapter = FileTreeAdapter(
             onNoteClick = { note -> openNote(note) },
-            onNoteLongClick = { note, anchor -> showNoteLongPressMenu(note) }
+            onFolderClick = { /* fold/unfold handled by adapter */ }
         )
-        rvNotes.layoutManager = LinearLayoutManager(this)
-        rvNotes.adapter = noteAdapter
+        rvFileTree.layoutManager = LinearLayoutManager(this)
+        rvFileTree.adapter = fileTreeAdapter
 
-        // New note button
-        findViewById<FloatingActionButton>(R.id.fab_new_note).setOnClickListener {
-            noteListVm.createNote("/", "Untitled") { note -> openNote(note) }
+        // Bottom bar buttons
+        findViewById<View>(R.id.btn_close_drawer).setOnClickListener {
             drawerLayout.closeDrawer(GravityCompat.START)
         }
-
-        // Vault name click → rename
-        tvVaultName.setOnClickListener { showRenameVaultDialog() }
-
-        // Connect folder button
-        findViewById<View>(R.id.btn_connect_folder).setOnClickListener {
-            folderPickerLauncher.launch(null)
-        }
-
-        // Settings shortcut from drawer
         findViewById<View>(R.id.btn_drawer_settings).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
             drawerLayout.closeDrawer(GravityCompat.START)
         }
+        findViewById<View>(R.id.btn_drawer_theme).setOnClickListener {
+            startActivity(Intent(this, ThemeListActivity::class.java))
+            drawerLayout.closeDrawer(GravityCompat.START)
+        }
+        findViewById<View>(R.id.btn_drawer_characters).setOnClickListener {
+            startActivity(Intent(this, SheetsActivity::class.java))
+            drawerLayout.closeDrawer(GravityCompat.START)
+        }
+    }
+
+    private fun updateFileTree() {
+        val tree = bookVm.buildTree()
+        fileTreeAdapter.update(tree)
     }
 
     private fun openNote(note: Note) {
         (application as ScribeApp).prefs.activeNoteId = note.id
         editorVm.loadNote(note.id)
-        noteAdapter.setActiveNote(note.id)
         drawerLayout.closeDrawer(GravityCompat.START)
     }
 
@@ -544,7 +559,6 @@ class MainActivity : AppCompatActivity() {
             tvTitle.text = note.name
             val path = if (note.folderPath == "/") "" else "${note.folderPath}/"
             tvSubtitle.text = "$path${note.name}.${note.ext}"
-            noteAdapter.setActiveNote(note.id)
         }
 
         // Theme
@@ -571,23 +585,22 @@ class MainActivity : AppCompatActivity() {
             recoveryBanner.visibility = if (available) View.VISIBLE else View.GONE
         }
 
-        // Note list
-        noteListVm.notes.observe(this) { notes ->
-            noteAdapter.submitList(notes)
-            // Auto-open last active note on first load
-            val activeId = (application as ScribeApp).prefs.activeNoteId
-            if (activeId != null && editorVm.activeNote.value == null) {
-                val active = notes.firstOrNull { it.id == activeId }
-                if (active != null) editorVm.loadNote(active.id)
-                else if (notes.isNotEmpty()) editorVm.loadNote(notes.first().id)
-            } else if (editorVm.activeNote.value == null && notes.isNotEmpty()) {
-                editorVm.loadNote(notes.first().id)
+        // File tree — observes BookViewModel (book-scoped)
+        bookVm.notes.observe(this) { notes ->
+            updateFileTree()
+            // Auto-open on first load: prefer intent noteId → prefs → first note
+            if (editorVm.activeNote.value == null && notes.isNotEmpty()) {
+                val prefId = (application as ScribeApp).prefs.activeNoteId
+                val intentId = intent.getStringExtra(EXTRA_NOTE_ID)
+                val targetId = intentId ?: prefId
+                val note = notes.firstOrNull { it.id == targetId } ?: notes.first()
+                editorVm.loadNote(note.id)
             }
         }
+        bookVm.folders.observe(this) { _ -> updateFileTree() }
 
-        noteListVm.externalRoot.observe(this) { root ->
-            val prefs = (application as ScribeApp).prefs
-            tvVaultName.text = root?.name ?: prefs.vaultName
+        bookVm.book.observe(this) { book ->
+            tvVaultName.text = book?.title ?: getString(R.string.app_name)
         }
 
         // Shortcuts
@@ -639,7 +652,6 @@ class MainActivity : AppCompatActivity() {
         // Left / right drawers
         leftDrawer.setBackgroundColor(ThemeManager.parseColor(theme.colors.surface))
         rightDrawer.setBackgroundColor(ThemeManager.parseColor(theme.colors.surface))
-        tvVaultName.setTextColor(toolbarText)
     }
 
     // ── Keyboard helpers ───────────────────────────────────────────────────────
@@ -666,7 +678,7 @@ class MainActivity : AppCompatActivity() {
                         drawerLayout.closeDrawer(GravityCompat.START)
                     drawerLayout.isDrawerOpen(GravityCompat.END) ->
                         drawerLayout.closeDrawer(GravityCompat.END)
-                    else -> isEnabled = false
+                    else -> finish()  // return to BookActivity
                 }
             }
         })

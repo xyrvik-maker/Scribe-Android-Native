@@ -7,11 +7,11 @@
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
-    <!-- Scoped media access on Android 13+ for sheet cover photos -->
+    <!-- Scoped media access on Android 13+ for book cover photos and sheet portraits -->
     <uses-permission
         android:name="android.permission.READ_MEDIA_IMAGES"
         tools:ignore="PermissionImpliesUnsupportedChromeOsHardware" />
-    <!-- Camera for capturing sheet cover photos -->
+    <!-- Camera for capturing cover / portrait photos -->
     <uses-permission android:name="android.permission.CAMERA" />
 
     <application
@@ -26,12 +26,12 @@
         android:theme="@style/Theme.Scribe"
         tools:targetApi="31">
 
-        <!-- Main writing activity -->
+        <!-- ── Launcher: books homepage ──────────────────────────────── -->
         <activity
-            android:name=".MainActivity"
+            android:name=".HomeActivity"
             android:exported="true"
             android:launchMode="singleTop"
-            android:windowSoftInputMode="adjustResize"
+            android:windowSoftInputMode="adjustPan"
             android:configChanges="orientation|screenSize|keyboardHidden|uiMode">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -39,11 +39,29 @@
             </intent-filter>
         </activity>
 
+        <!-- ── Book interior (files / folders) ──────────────────────── -->
+        <activity
+            android:name=".BookActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:parentActivityName=".HomeActivity"
+            android:windowSoftInputMode="adjustPan"
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode" />
+
+        <!-- ── Editor ─────────────────────────────────────────────────── -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:parentActivityName=".BookActivity"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode" />
+
         <!-- Settings -->
         <activity
             android:name=".SettingsActivity"
             android:exported="false"
-            android:parentActivityName=".MainActivity"
+            android:parentActivityName=".HomeActivity"
             android:windowSoftInputMode="adjustPan" />
 
         <!-- Theme list -->
@@ -83,7 +101,7 @@
         <activity
             android:name=".GuideActivity"
             android:exported="false"
-            android:parentActivityName=".MainActivity" />
+            android:parentActivityName=".HomeActivity" />
 
         <!-- Crash reporter — uses a built-in system theme so it can never
              itself crash due to missing custom resources. -->

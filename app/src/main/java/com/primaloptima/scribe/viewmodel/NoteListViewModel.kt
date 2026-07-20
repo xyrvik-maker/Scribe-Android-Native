@@ -9,6 +9,7 @@ import androidx.lifecycle.asLiveData
 import androidx.lifecycle.viewModelScope
 import com.google.gson.Gson
 import com.primaloptima.scribe.ScribeApp
+import com.primaloptima.scribe.data.Book
 import com.primaloptima.scribe.data.Folder
 import com.primaloptima.scribe.data.Note
 import com.primaloptima.scribe.util.SAFHelper
@@ -39,11 +40,22 @@ class NoteListViewModel(application: Application) : AndroidViewModel(application
 
     init {
         loadExternalRoot()
-        ensureRootFolder()
+        ensureDefaultBook()
         checkFirstLaunch()
     }
 
     // ── First launch ──────────────────────────────────────────────────────────
+
+    private fun ensureDefaultBook() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val now = System.currentTimeMillis()
+            db.bookDao().insertIfAbsent(
+                Book(id = Note.DEFAULT_BOOK_ID, title = "My Notes",
+                     createdAt = now, updatedAt = now)
+            )
+            db.noteDao().insertFolder(Folder(path = "/"))
+        }
+    }
 
     private fun checkFirstLaunch() {
         viewModelScope.launch(Dispatchers.IO) {
@@ -56,11 +68,14 @@ class NoteListViewModel(application: Application) : AndroidViewModel(application
 
     private suspend fun insertSampleNotes() {
         val now = System.currentTimeMillis()
+        val bid = Note.DEFAULT_BOOK_ID
         db.noteDao().insertFolders(listOf(
-            Folder("/"), Folder("/Journal"), Folder("/Drafts")
+            Folder(path = "/"),
+            Folder(path = "/Journal"),
+            Folder(path = "/Drafts")
         ))
         db.noteDao().insertAll(listOf(
-            Note(id = "welcome", name = "Welcome", folderPath = "/", ext = "md",
+            Note(id = "welcome", name = "Welcome", bookId = bid, folderPath = "/", ext = "md",
                  createdAt = now - 86400000L, updatedAt = now - 86400000L,
                  content = """# Welcome to Scribe
 
@@ -75,12 +90,12 @@ Your private, on-device writing space — distraction-free and fully offline.
 
 > The cursor jumps out of quotes when you press Enter. Try it.
 
-Swipe in from the right edge to open the file panel. Tap **Connect folder** to read and write files from your phone.
+Swipe in from the left edge inside the editor to see your book's files.
 
 ---
 
 Happy writing."""),
-            Note(id = "tips", name = "Tips", folderPath = "/", ext = "md",
+            Note(id = "tips", name = "Tips", bookId = bid, folderPath = "/", ext = "md",
                  createdAt = now - 43200000L, updatedAt = now - 43200000L,
                  content = """# Tips
 
@@ -95,7 +110,7 @@ Open the menu and tap *Shortcuts* to add your own. Each shortcut can:
 - Insert plain text (em-dash, ellipsis, signature)
 - Wrap selection (markdown bold, italic, code)
 - Insert a paired character"""),
-            Note(id = "journal-jan", name = "January", folderPath = "/Journal", ext = "md",
+            Note(id = "journal-jan", name = "January", bookId = bid, folderPath = "/Journal", ext = "md",
                  createdAt = now - 21600000L, updatedAt = now - 21600000L,
                  content = """# January
 
@@ -109,7 +124,7 @@ What I want to write about this year:
 - The light through the kitchen window
 - The neighbour's cat
 - Letters I never sent"""),
-            Note(id = "draft-essay", name = "On attention", folderPath = "/Drafts", ext = "md",
+            Note(id = "draft-essay", name = "On attention", bookId = bid, folderPath = "/Drafts", ext = "md",
                  createdAt = now - 1800000L, updatedAt = now - 1800000L,
                  content = """# On attention
 
@@ -119,17 +134,14 @@ When you come back, read it aloud. The sentences that make you stumble are the s
         ))
     }
 
-    // ── Folder setup ──────────────────────────────────────────────────────────
-
-    private fun ensureRootFolder() {
-        viewModelScope.launch(Dispatchers.IO) {
-            db.noteDao().insertFolder(Folder("/"))
-        }
-    }
-
     // ── CRUD ──────────────────────────────────────────────────────────────────
 
-    fun createNote(folderPath: String = "/", name: String = "Untitled", onCreated: (Note) -> Unit) {
+    fun createNote(
+        bookId: String = Note.DEFAULT_BOOK_ID,
+        folderPath: String = "/",
+        name: String = "Untitled",
+        onCreated: (Note) -> Unit
+    ) {
         viewModelScope.launch {
             val exr = _externalRoot.value
             if (exr != null) {
@@ -138,25 +150,23 @@ When you come back, read it aloud. The sentences that make you stumble are the s
                 try {
                     val uri = SAFHelper.createFile(getApplication(), parentUri, name, "md")
                     val note = Note(
-                        id = "ext::${uri}",
-                        name = name, folderPath = folderPath, ext = "md",
+                        id = "ext::${uri}", name = name,
+                        bookId = bookId, folderPath = folderPath, ext = "md",
                         externalUri = uri.toString(), loaded = true,
                         createdAt = System.currentTimeMillis(), updatedAt = System.currentTimeMillis()
                     )
                     withContext(Dispatchers.IO) { db.noteDao().insert(note) }
-                    prefs.activeNoteId = note.id
-                    onCreated(note)
+                    withContext(Dispatchers.Main) { onCreated(note) }
+                    return@launch
                 } catch (_: Exception) {}
-            } else {
-                val note = Note(
-                    id = System.currentTimeMillis().toString() + Math.random().toString().takeLast(7),
-                    name = name, folderPath = folderPath, ext = "md",
-                    createdAt = System.currentTimeMillis(), updatedAt = System.currentTimeMillis()
-                )
-                withContext(Dispatchers.IO) { db.noteDao().insert(note) }
-                prefs.activeNoteId = note.id
-                onCreated(note)
             }
+            val note = Note(
+                id = java.util.UUID.randomUUID().toString(),
+                name = name, bookId = bookId, folderPath = folderPath, ext = "md",
+                createdAt = System.currentTimeMillis(), updatedAt = System.currentTimeMillis()
+            )
+            withContext(Dispatchers.IO) { db.noteDao().insert(note) }
+            withContext(Dispatchers.Main) { onCreated(note) }
         }
     }
 
@@ -174,16 +184,19 @@ When you come back, read it aloud. The sentences that make you stumble are the s
 
     fun deleteNote(noteId: String) {
         viewModelScope.launch {
-            val note = withContext(Dispatchers.IO) { db.noteDao().getById(noteId) } ?: return@launch
-            if (note.externalUri != null) {
-                try { SAFHelper.deleteDocument(getApplication(), Uri.parse(note.externalUri)) }
-                catch (_: Exception) {}
-            }
+            try {
+                val note = withContext(Dispatchers.IO) { db.noteDao().getById(noteId) }
+                if (note?.externalUri != null) {
+                    try {
+                        SAFHelper.deleteFile(getApplication(), Uri.parse(note.externalUri))
+                    } catch (_: Exception) {}
+                }
+            } catch (_: Exception) {}
             withContext(Dispatchers.IO) { db.noteDao().deleteById(noteId) }
         }
     }
 
-    fun createFolder(path: String) {
+    fun createFolder(bookId: String = Note.DEFAULT_BOOK_ID, path: String) {
         viewModelScope.launch {
             val cleaned = if (path.startsWith("/")) path else "/$path"
             val exr = _externalRoot.value
@@ -192,21 +205,22 @@ When you come back, read it aloud. The sentences that make you stumble are the s
                     val folderName = cleaned.split("/").last()
                     val uri = SAFHelper.createFolder(getApplication(), Uri.parse(exr.uri), folderName)
                     withContext(Dispatchers.IO) {
-                        db.noteDao().insertFolder(Folder(cleaned, externalUri = uri.toString()))
+                        db.noteDao().insertFolder(Folder(path = cleaned, externalUri = uri.toString()))
                     }
                 } catch (_: Exception) {}
             } else {
-                withContext(Dispatchers.IO) { db.noteDao().insertFolder(Folder(cleaned)) }
+                withContext(Dispatchers.IO) {
+                    db.noteDao().insertFolder(Folder(bookId = bookId, path = cleaned))
+                }
             }
         }
     }
 
-    fun deleteFolder(path: String) {
+    fun deleteFolder(bookId: String = Note.DEFAULT_BOOK_ID, path: String) {
         if (path == "/") return
         viewModelScope.launch(Dispatchers.IO) {
-            db.noteDao().deleteFolder(path)
-            // Move orphaned notes to root
-            val orphans = db.noteDao().getByFolder(path)
+            db.noteDao().deleteFolder(bookId, path)
+            val orphans = db.noteDao().getByBookFolder(bookId, path)
             for (note in orphans) {
                 db.noteDao().moveNote(note.id, "/", System.currentTimeMillis())
             }
@@ -256,16 +270,17 @@ When you come back, read it aloud. The sentences that make you stumble are the s
                 withContext(Dispatchers.IO) {
                     db.noteDao().deleteAllExternal()
                     db.noteDao().deleteAllExternalFolders()
-                    // Insert root folder
-                    db.noteDao().insertFolder(Folder("/", externalUri = root.uri))
-                    // Insert scanned folders
-                    val folderEntries = result.folders.map { Folder(it.relativePath, it.uri) }
+                    db.noteDao().insertFolder(Folder(path = "/", externalUri = root.uri))
+                    val folderEntries = result.folders.map {
+                        Folder(path = it.relativePath, externalUri = it.uri)
+                    }
                     db.noteDao().insertFolders(folderEntries)
-                    // Insert files
                     val noteEntries = result.files.map { f ->
                         val ext = if (f.ext in setOf("md", "mdown", "markdown")) "md" else "txt"
                         Note(
-                            id = "ext::${f.uri}", name = f.name, folderPath = f.folderPath,
+                            id = "ext::${f.uri}", name = f.name,
+                            bookId = Note.DEFAULT_BOOK_ID,
+                            folderPath = f.folderPath,
                             ext = ext, content = "", loaded = false,
                             externalUri = f.uri,
                             createdAt = System.currentTimeMillis(),

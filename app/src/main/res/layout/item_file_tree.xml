@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="44dp"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:background="?attr/selectableItemBackground"
+    android:paddingEnd="8dp">
+
+    <!-- Indent spacer (width set programmatically) -->
+    <View
+        android:id="@+id/view_indent"
+        android:layout_width="0dp"
+        android:layout_height="1dp" />
+
+    <!-- Folder chevron or file icon -->
+    <ImageView
+        android:id="@+id/img_tree_icon"
+        android:layout_width="18dp"
+        android:layout_height="18dp"
+        android:layout_marginStart="8dp"
+        android:alpha="0.6" />
+
+    <!-- Name -->
+    <TextView
+        android:id="@+id/tv_tree_name"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="8dp"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textSize="14sp" />
+
+</LinearLayout>

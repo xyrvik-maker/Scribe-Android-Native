@@ -9,6 +9,7 @@ import androidx.room.PrimaryKey
 data class Note(
     @PrimaryKey val id: String,
     val name: String,
+    @ColumnInfo(name = "book_id") val bookId: String = DEFAULT_BOOK_ID,
     @ColumnInfo(name = "folder_path") val folderPath: String = "/",
     /** "md" or "txt" */
     val ext: String = "md",
@@ -19,11 +20,16 @@ data class Note(
     @ColumnInfo(name = "external_uri") val externalUri: String? = null,
     /** True once the SAF file content has been read from disk. */
     val loaded: Boolean = true
-)
+) {
+    companion object {
+        const val DEFAULT_BOOK_ID = "default"
+    }
+}
 
-/** A logical folder entry in the vault. */
-@Entity(tableName = "folders")
+/** A logical folder entry in the vault, scoped to a book. */
+@Entity(tableName = "folders", primaryKeys = ["book_id", "path"])
 data class Folder(
-    @PrimaryKey val path: String,
+    @ColumnInfo(name = "book_id") val bookId: String = Note.DEFAULT_BOOK_ID,
+    val path: String,
     @ColumnInfo(name = "external_uri") val externalUri: String? = null
 )
