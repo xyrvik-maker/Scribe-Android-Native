@@ -21,6 +21,34 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      # ── Stable debug keystore ───────────────────────────────────────────────
+      # The cache key is fixed (scribe-debug-keystore-v1) so every build after
+      # the first one reuses the exact same .jks file and therefore the exact
+      # same APK signature.  Install-over-update works without uninstalling.
+      # To intentionally rotate the key (e.g. after a security event) bump v1→v2.
+      - name: Restore debug keystore from cache
+        id: ks-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: scribe-debug-keystore-v1
+
+      - name: Generate debug keystore (first build only)
+        if: steps.ks-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.android
+          keytool -genkeypair \
+            -alias androiddebugkey \
+            -keypass android \
+            -keystore ~/.android/debug.keystore \
+            -storepass android \
+            -dname "CN=Android Debug,O=Android,C=US" \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000
+          echo "New debug keystore created and cached."
+
+      # ── Build ───────────────────────────────────────────────────────────────
       - name: Setup Gradle 8.10.2
         uses: gradle/actions/setup-gradle@v4
         with:
