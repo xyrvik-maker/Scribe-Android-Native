@@ -12,6 +12,7 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
+import android.widget.Button
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -243,10 +244,10 @@ class MainActivity : AppCompatActivity() {
         findViewById<ImageButton>(R.id.btn_find_next).setOnClickListener {
             editor.findNext(); updateMatchCount()
         }
-        findViewById<ImageButton>(R.id.btn_replace_one).setOnClickListener {
+        findViewById<Button>(R.id.btn_replace_one).setOnClickListener {
             editor.replaceCurrentMatch(replaceInput.text.toString()); updateMatchCount()
         }
-        findViewById<ImageButton>(R.id.btn_replace_all).setOnClickListener {
+        findViewById<Button>(R.id.btn_replace_all).setOnClickListener {
             val count = editor.replaceAll(replaceInput.text.toString())
             Toast.makeText(this, "Replaced $count occurrence(s)", Toast.LENGTH_SHORT).show()
             updateMatchCount()
