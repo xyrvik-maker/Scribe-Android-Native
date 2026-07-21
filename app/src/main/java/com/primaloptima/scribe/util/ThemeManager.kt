@@ -33,7 +33,18 @@ class ThemeManager(private val context: Context) {
         return allThemes().firstOrNull { it.id == id } ?: DefaultThemes.all.first()
     }
 
-    fun setActiveTheme(id: String) { prefs.activeThemeId = id }
+    fun setActiveTheme(id: String) {
+        prefs.activeThemeId = id
+        ThemeBus.emit(activeTheme())
+    }
+
+    fun saveActiveTheme(theme: AppTheme) {
+        // Persist custom theme (if not built-in) and broadcast so open
+        // activities pick it up without a restart.
+        if (!theme.builtIn) saveCustomTheme(theme)
+        prefs.activeThemeId = theme.id
+        ThemeBus.emit(theme)
+    }
 
     fun saveCustomTheme(theme: AppTheme) {
         val list = allCustomThemes().toMutableList()

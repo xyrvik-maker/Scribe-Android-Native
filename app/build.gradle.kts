@@ -85,6 +85,11 @@ dependencies {
     // Image loading (for sheet photos and cover images)
     implementation("io.coil-kt:coil:2.7.0")
 
+    // Palette extraction (used by ThemeEditActivity to derive a theme
+    // from a user-picked background image).
+    implementation("androidx.palette:palette-ktx:1.0.0")
+
+
     // Testing
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

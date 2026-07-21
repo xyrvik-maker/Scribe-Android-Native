@@ -93,7 +93,13 @@ data class AppTheme(
     val paddingVertical: Int,
     val maxWidth: Int,
     val backgroundImageUri: String? = null,
-    val backgroundImageOpacity: Float? = null
+    val backgroundImageOpacity: Float? = null,
+    /** Blur radius applied to the background image, 0–24 px. API 31+ only. */
+    val backgroundImageBlur: Int? = null,
+    /** Background color for search-match highlights inside title paths. */
+    val searchHighlightTitle: String? = null,
+    /** Background color for search-match highlights inside body snippets. */
+    val searchHighlightBody: String? = null
 )
 
 // ── SAF scan result ───────────────────────────────────────────────────────────
