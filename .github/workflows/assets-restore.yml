@@ -1,0 +1,132 @@
+name: Restore icons and fonts from RN repo
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install git and tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git rsync jq
+
+      - name: Clone RN repository (shallow)
+        run: |
+          rm -rf source-rn || true
+          git clone --depth 1 https://github.com/mysticscriptor-create/Scribes.git source-rn || true
+          echo "RN repo clone exit code: $?"
+
+      - name: Debug: show top-level of RN repo
+        run: |
+          echo "=== top-level of source-rn ==="
+          ls -la source-rn || true
+          echo "=== find candidate asset dirs ==="
+          find source-rn -maxdepth 6 -type d \( -iname "res" -o -iname "drawable*" -o -iname "mipmap*" -o -iname "assets" -o -iname "images" -o -iname "icons" -o -iname "font*" -o -iname "fonts" -o -iname "android" \) -print || true
+
+      - name: Create working branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout -b assets-restore
+
+      - name: Copy discovered assets into Android res
+        run: |
+          set -euo pipefail
+          mkdir -p app/src/main/res || true
+
+          # Copy exact resource directories when present
+          for d in \
+            "source-rn/android/app/src/main/res" \
+            "source-rn/android/res" \
+            "source-rn/app/src/main/res" \
+            "source-rn/res" \
+            "source-rn/assets" \
+            "source-rn/assets/images" \
+            "source-rn/assets/icons" \
+            "source-rn/images" \
+            "source-rn/icons" ; do
+            if [ -d "$d" ]; then
+              echo "Copying resources from $d"
+              for sub in "$d"/*; do
+                if [ -d "$sub" ]; then
+                  name=$(basename "$sub")
+                  dest="app/src/main/res/$name"
+                  mkdir -p "$dest"
+                  rsync -a --delete "$sub"/ "$dest"/ || true
+                fi
+              done
+            fi
+          done
+
+          # Copy standalone fonts into res/font
+          find source-rn -type f \( -iname "*.ttf" -o -iname "*.otf" -o -iname "*.woff" -o -iname "*.woff2" \) -print | while read -r f; do
+            echo "Found font: $f"
+            mkdir -p app/src/main/res/font
+            cp -n "$f" app/src/main/res/font/ || true
+          done
+
+          # Copy images into drawable or density-mipmap folders
+          find source-rn -type f \( -iname "*.png" -o -iname "*.webp" -o -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.svg" \) -print | while read -r img; do
+            base=$(basename "$img")
+            if echo "$img" | grep -q "mipmap-"; then
+              folder=$(echo "$img" | sed -n 's/.*\(mipmap-[^/]*\).*/\1/p')
+              mkdir -p "app/src/main/res/$folder"
+              cp -n "$img" "app/src/main/res/$folder/$base" || true
+            elif echo "$img" | grep -q "drawable"; then
+              folder=$(echo "$img" | sed -n 's/.*\(drawable[^/]*\).*/\1/p')
+              mkdir -p "app/src/main/res/$folder"
+              cp -n "$img" "app/src/main/res/$folder/$base" || true
+            else
+              mkdir -p app/src/main/res/drawable
+              cp -n "$img" "app/src/main/res/drawable/$base" || true
+            fi
+          done
+
+          echo "List res folders after copy:"
+          ls -la app/src/main/res || true
+
+      - name: Add/commit changes if any
+        run: |
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No resource changes detected to commit."
+            touch .no-resource-changes
+            git add .no-resource-changes
+            git commit -m "No resource changes found from RN repo; create assets-restore branch for review" || true
+          else
+            git commit -m "Restore icons, drawables and fonts from RN repo (candidate files)" || true
+          fi
+
+      - name: Push branch
+        run: |
+          git push origin assets-restore --force
+
+      - name: Create Pull Request
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          repo="${{ github.repository }}"
+          title="Restore icons and fonts from RN repo"
+          body="This PR adds candidate icons, drawables and fonts copied from the React Native source (https://github.com/mysticscriptor-create/Scribes) into app/src/main/res for review. Please review diffs and asset placements before merging."
+          existing=$(curl -s -H "Authorization: token $GITHUB_TOKEN" "https://api.github.com/repos/$repo/pulls?head=${{ github.actor }}:assets-restore" | jq '. | length' || echo "0")
+          if [ "$existing" = "0" ]; then
+            curl -s -X POST -H "Authorization: token $GITHUB_TOKEN" -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/repos/$repo/pulls" \
+              -d "{\"title\":\"${title}\",\"head\":\"assets-restore\",\"base\":\"main\",\"body\":\"${body}\"}" | jq . || true
+          else
+            echo "A PR from assets-restore already exists; skipping PR creation."
+          fi
+
+      - name: Done - summary
+        run: |
+          echo "Finished - check Pull requests in this repo."
