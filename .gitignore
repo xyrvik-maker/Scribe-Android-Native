@@ -1,0 +1,13 @@
+node_modules/
+.env
+.env.local
+*.iml
+.gradle/
+local.properties
+.idea/
+app/build/
+build/
+.kotlin/
+.build-outputs/
+metadata.json
+debug.keystore*
