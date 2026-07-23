@@ -37,7 +37,11 @@ class ThemeManager(private val context: Context) {
             val type = object : TypeToken<List<AppTheme>>() {}.type
             gson.fromJson<List<AppTheme>>(prefs.customThemesJson, type) ?: emptyList()
         } catch (_: Exception) { emptyList() }
-        return DefaultThemes.all + custom
+        val builtInIds = DefaultThemes.all.map { it.id }.toSet()
+        val customMap = custom.associateBy { it.id }
+        val updatedBuiltIns = DefaultThemes.all.map { builtIn -> customMap[builtIn.id] ?: builtIn }
+        val newCustoms = custom.filter { it.id !in builtInIds }
+        return (updatedBuiltIns + newCustoms).distinctBy { it.id }
     }
 
     fun activeTheme(): AppTheme {

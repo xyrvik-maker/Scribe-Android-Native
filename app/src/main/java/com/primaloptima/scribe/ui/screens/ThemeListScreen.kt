@@ -78,7 +78,7 @@ fun ThemeListScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            items(themes, key = { it.id }) { theme ->
+            items(themes, key = { theme -> theme.id }) { theme ->
                 val isSelected = theme.id == activeTheme?.id
                 ThemeCard(
                     theme = theme,
