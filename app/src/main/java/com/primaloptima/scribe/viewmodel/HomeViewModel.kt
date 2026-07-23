@@ -21,9 +21,40 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val db = app.database
 
     val books: LiveData<List<Book>> = db.bookDao().observeAll().asLiveData()
+    val allNotes: LiveData<List<Note>> = db.noteDao().observeAll().asLiveData()
+    val allFolders: LiveData<List<Folder>> = db.noteDao().observeFolders().asLiveData()
 
     private val _searchResults = MutableLiveData<List<Book>>(emptyList())
     val searchResults: LiveData<List<Book>> = _searchResults
+
+    // ── Quick Note Creation ──────────────────────────────────────────────────
+
+    fun createQuickNote(onCreated: (Note) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val existing = db.noteDao().getByFolder("/Quick Notes")
+            val quickNotes = if (existing.isEmpty()) {
+                db.noteDao().getByBookFolder(Note.DEFAULT_BOOK_ID, "/Quick Notes")
+            } else existing
+
+            val nextNumber = quickNotes.size + 1
+            val title = "Note $nextNumber"
+            val id = UUID.randomUUID().toString()
+            val now = System.currentTimeMillis()
+
+            val note = Note(
+                id = id,
+                bookId = Note.DEFAULT_BOOK_ID,
+                name = title,
+                content = "",
+                folderPath = "/Quick Notes",
+                createdAt = now,
+                updatedAt = now
+            )
+            db.noteDao().insertFolder(Folder(bookId = Note.DEFAULT_BOOK_ID, path = "/Quick Notes"))
+            db.noteDao().insert(note)
+            withContext(Dispatchers.Main) { onCreated(note) }
+        }
+    }
 
     // ── Sort mode ──────────────────────────────────────────────────────────────
 
