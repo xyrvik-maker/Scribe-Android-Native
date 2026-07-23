@@ -5,7 +5,6 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -19,7 +18,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -30,7 +28,6 @@ import coil.compose.AsyncImage
 import com.primaloptima.scribe.ui.theme.parseComposeColor
 import com.primaloptima.scribe.util.DefaultThemes
 import com.primaloptima.scribe.util.model.AppTheme
-import com.primaloptima.scribe.util.model.ThemeColors
 import com.primaloptima.scribe.viewmodel.ThemeViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -107,8 +104,8 @@ fun ThemeEditScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Preview Card
-            Text("Preview", fontWeight = FontWeight.Bold)
+            // Live Preview Card
+            Text("Theme Live Preview", fontWeight = FontWeight.Bold, fontSize = 16.sp)
             val previewBg = parseComposeColor(bgHex, Color.White)
             val previewText = parseComposeColor(textHex, Color.Black)
             val previewAccent = parseComposeColor(accentHex, Color.Blue)
@@ -116,7 +113,7 @@ fun ThemeEditScreen(
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(140.dp),
+                    .height(160.dp),
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Box(
@@ -129,8 +126,12 @@ fun ThemeEditScreen(
                             model = bgUri,
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
-                            alpha = bgOpacity,
                             modifier = Modifier.fillMaxSize()
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = bgOpacity))
                         )
                     }
                     Box(
@@ -148,7 +149,7 @@ fun ThemeEditScreen(
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                "Accent Highlight",
+                                "Accent Highlight & Cursor Color",
                                 color = previewAccent,
                                 fontSize = (fontSize - 2).sp,
                                 fontWeight = FontWeight.Bold
@@ -160,19 +161,19 @@ fun ThemeEditScreen(
 
             HorizontalDivider()
 
-            Text("Background Image & Opacity", fontWeight = FontWeight.Bold)
+            Text("Background Image & Opacity Control", fontWeight = FontWeight.Bold, fontSize = 16.sp)
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                OutlinedButton(
+                Button(
                     onClick = { bgImagePicker.launch("image/*") }
                 ) {
                     Icon(Icons.Default.Image, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(if (bgUri.isNullOrEmpty()) "Pick Background Image" else "Change Image")
+                    Text(if (bgUri.isNullOrEmpty()) "Add Background Image" else "Change Image")
                 }
 
                 if (!bgUri.isNullOrEmpty()) {
@@ -183,17 +184,19 @@ fun ThemeEditScreen(
             }
 
             if (!bgUri.isNullOrEmpty()) {
-                Text("Image Opacity: ${(bgOpacity * 100).toInt()}%")
-                Slider(
-                    value = bgOpacity,
-                    onValueChange = { bgOpacity = it },
-                    valueRange = 0.05f..1.0f
-                )
+                Column {
+                    Text("Overlay Opacity: ${(bgOpacity * 100).toInt()}%", fontWeight = FontWeight.Medium)
+                    Slider(
+                        value = bgOpacity,
+                        onValueChange = { bgOpacity = it },
+                        valueRange = 0.0f..0.90f
+                    )
+                }
             }
 
             HorizontalDivider()
 
-            Text("Properties", fontWeight = FontWeight.Bold)
+            Text("Color & Font Properties", fontWeight = FontWeight.Bold, fontSize = 16.sp)
 
             OutlinedTextField(
                 value = name,

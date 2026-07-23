@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -350,6 +351,12 @@ fun MainEditorScreen(
                     topBar = {
                         if (!zenMode) {
                             TopAppBar(
+                                colors = TopAppBarDefaults.topAppBarColors(
+                                    containerColor = MaterialTheme.colorScheme.surface,
+                                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                                    actionIconContentColor = MaterialTheme.colorScheme.primary,
+                                    navigationIconContentColor = MaterialTheme.colorScheme.primary
+                                ),
                                 title = {
                                     Column(
                                         modifier = Modifier.clickable {
@@ -595,6 +602,11 @@ fun MainEditorScreen(
                                 }
                             }
 
+                            val currentThemeBg = MaterialTheme.colorScheme.background
+                            val currentThemeTextColor = MaterialTheme.colorScheme.onBackground
+                            val currentThemePrimary = MaterialTheme.colorScheme.primary
+                            val hasBgImage = !activeTheme?.backgroundImageUri.isNullOrEmpty()
+
                             AndroidView(
                                 factory = { ctx ->
                                     ScrollView(ctx).apply {
@@ -618,7 +630,27 @@ fun MainEditorScreen(
                                         addView(edit)
                                     }
                                 },
-                                update = { _ ->
+                                update = { scrollView ->
+                                    val edit = editorRef
+                                    if (edit != null) {
+                                        val bgArgb = if (hasBgImage) android.graphics.Color.TRANSPARENT else currentThemeBg.toArgb()
+                                        val textArgb = currentThemeTextColor.toArgb()
+                                        val primaryArgb = currentThemePrimary.toArgb()
+
+                                        scrollView.setBackgroundColor(bgArgb)
+                                        edit.setBackgroundColor(bgArgb)
+                                        edit.setTextColor(textArgb)
+
+                                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                                            edit.textCursorDrawable?.setTint(primaryArgb)
+                                        }
+                                        activeTheme?.let { t ->
+                                            val tf = com.primaloptima.scribe.util.ThemeManager.resolveTypeface(edit.context, t.fontFamily)
+                                            edit.typeface = tf
+                                            edit.textSize = t.fontSize.toFloat()
+                                        }
+                                    }
+
                                     activeNote?.let { note ->
                                         if (editorRef?.text?.toString() != note.content) {
                                             editorRef?.setText(note.content)

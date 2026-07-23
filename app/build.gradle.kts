@@ -78,6 +78,9 @@ dependencies {
     implementation("androidx.compose.runtime:runtime-livedata")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("com.airbnb.android:lottie-compose:6.4.1")
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation("com.google.accompanist:accompanist-systemuicontroller:0.34.0")
+    implementation("androidx.compose.ui:ui-text-google-fonts:1.7.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 
