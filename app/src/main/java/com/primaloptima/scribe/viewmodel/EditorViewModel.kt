@@ -44,14 +44,91 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private val _floatingWindows = MutableLiveData<List<com.primaloptima.scribe.util.model.FloatingWindow>>(emptyList())
     val floatingWindows: LiveData<List<com.primaloptima.scribe.util.model.FloatingWindow>> = _floatingWindows
 
-    private val _pinnedTopNoteId = MutableLiveData<String?>(null)
-    val pinnedTopNoteId: LiveData<String?> = _pinnedTopNoteId
+    private val _pinnedTopNotes = MutableLiveData<List<String>>(emptyList())
+    val pinnedTopNotes: LiveData<List<String>> = _pinnedTopNotes
 
-    private val _pinnedBottomNoteId = MutableLiveData<String?>(null)
-    val pinnedBottomNoteId: LiveData<String?> = _pinnedBottomNoteId
+    private val _pinnedTopIndex = MutableLiveData<Int>(0)
+    val pinnedTopIndex: LiveData<Int> = _pinnedTopIndex
 
-    fun setPinnedTop(noteId: String?) { _pinnedTopNoteId.value = noteId }
-    fun setPinnedBottom(noteId: String?) { _pinnedBottomNoteId.value = noteId }
+    private val _pinnedBottomNotes = MutableLiveData<List<String>>(emptyList())
+    val pinnedBottomNotes: LiveData<List<String>> = _pinnedBottomNotes
+
+    private val _pinnedBottomIndex = MutableLiveData<Int>(0)
+    val pinnedBottomIndex: LiveData<Int> = _pinnedBottomIndex
+
+    fun addPinnedTop(noteId: String) {
+        val list = _pinnedTopNotes.value.orEmpty().toMutableList()
+        if (!list.contains(noteId)) {
+            list.add(noteId)
+            _pinnedTopNotes.value = list
+            _pinnedTopIndex.value = list.size - 1
+        } else {
+            _pinnedTopIndex.value = list.indexOf(noteId)
+        }
+    }
+
+    fun removePinnedTop(noteId: String) {
+        val list = _pinnedTopNotes.value.orEmpty().toMutableList()
+        list.remove(noteId)
+        _pinnedTopNotes.value = list
+        val currIdx = _pinnedTopIndex.value ?: 0
+        if (list.isEmpty()) {
+            _pinnedTopIndex.value = 0
+        } else {
+            _pinnedTopIndex.value = currIdx.coerceIn(0, list.size - 1)
+        }
+    }
+
+    fun prevPinnedTop() {
+        val list = _pinnedTopNotes.value.orEmpty()
+        if (list.size <= 1) return
+        val curr = _pinnedTopIndex.value ?: 0
+        _pinnedTopIndex.value = if (curr > 0) curr - 1 else list.size - 1
+    }
+
+    fun nextPinnedTop() {
+        val list = _pinnedTopNotes.value.orEmpty()
+        if (list.size <= 1) return
+        val curr = _pinnedTopIndex.value ?: 0
+        _pinnedTopIndex.value = if (curr < list.size - 1) curr + 1 else 0
+    }
+
+    fun addPinnedBottom(noteId: String) {
+        val list = _pinnedBottomNotes.value.orEmpty().toMutableList()
+        if (!list.contains(noteId)) {
+            list.add(noteId)
+            _pinnedBottomNotes.value = list
+            _pinnedBottomIndex.value = list.size - 1
+        } else {
+            _pinnedBottomIndex.value = list.indexOf(noteId)
+        }
+    }
+
+    fun removePinnedBottom(noteId: String) {
+        val list = _pinnedBottomNotes.value.orEmpty().toMutableList()
+        list.remove(noteId)
+        _pinnedBottomNotes.value = list
+        val currIdx = _pinnedBottomIndex.value ?: 0
+        if (list.isEmpty()) {
+            _pinnedBottomIndex.value = 0
+        } else {
+            _pinnedBottomIndex.value = currIdx.coerceIn(0, list.size - 1)
+        }
+    }
+
+    fun prevPinnedBottom() {
+        val list = _pinnedBottomNotes.value.orEmpty()
+        if (list.size <= 1) return
+        val curr = _pinnedBottomIndex.value ?: 0
+        _pinnedBottomIndex.value = if (curr > 0) curr - 1 else list.size - 1
+    }
+
+    fun nextPinnedBottom() {
+        val list = _pinnedBottomNotes.value.orEmpty()
+        if (list.size <= 1) return
+        val curr = _pinnedBottomIndex.value ?: 0
+        _pinnedBottomIndex.value = if (curr < list.size - 1) curr + 1 else 0
+    }
 
     fun openFloatingWindow(noteId: String) {
         val current = _floatingWindows.value.orEmpty().toMutableList()

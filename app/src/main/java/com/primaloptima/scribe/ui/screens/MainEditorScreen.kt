@@ -12,11 +12,13 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -27,19 +29,23 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import coil.compose.AsyncImage
 import com.primaloptima.scribe.*
+import com.primaloptima.scribe.data.Book
+import com.primaloptima.scribe.data.Folder
 import com.primaloptima.scribe.data.Note
 import com.primaloptima.scribe.ui.components.FloatingWindowOverlay
 import com.primaloptima.scribe.util.ExportHelper
@@ -50,7 +56,7 @@ import com.primaloptima.scribe.viewmodel.NoteListViewModel
 import com.primaloptima.scribe.viewmodel.ShortcutsViewModel
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun MainEditorScreen(
     editorVm: EditorViewModel,
@@ -74,15 +80,22 @@ fun MainEditorScreen(
     val recoveryAvailable by editorVm.recoveryAvailable.observeAsState(false)
     val activeTheme by editorVm.theme.observeAsState()
 
-    val bookNotes by bookVm.notes.observeAsState(emptyList())
+    val currentBookNotes by bookVm.notes.observeAsState(emptyList())
+    val currentBookFolders by bookVm.folders.observeAsState(emptyList())
+    val allNotes by noteListVm.notes.observeAsState(emptyList())
+    val allFolders by noteListVm.folders.observeAsState(emptyList())
     val shortcuts by shortcutsVm.shortcuts.observeAsState(emptyList())
 
     val floatingWindows by editorVm.floatingWindows.observeAsState(emptyList())
-    val pinnedTopNoteId by editorVm.pinnedTopNoteId.observeAsState()
-    val pinnedBottomNoteId by editorVm.pinnedBottomNoteId.observeAsState()
 
-    var rightDrawerTab by remember { mutableIntStateOf(0) } // 0: Reference Slots, 1: Outline
-    var leftDrawerFilterAll by remember { mutableStateOf(false) }
+    val pinnedTopNotes by editorVm.pinnedTopNotes.observeAsState(emptyList())
+    val pinnedTopIndex by editorVm.pinnedTopIndex.observeAsState(0)
+    val pinnedBottomNotes by editorVm.pinnedBottomNotes.observeAsState(emptyList())
+    val pinnedBottomIndex by editorVm.pinnedBottomIndex.observeAsState(0)
+
+    var rightDrawerTab by remember { mutableIntStateOf(0) } // 0: Pinned, 1: Outline
+    var leftDrawerMode by remember { mutableStateOf("Current") } // "Current" or "Books"
+    var leftSearchQuery by remember { mutableStateOf("") }
 
     var showFindBar by remember { mutableStateOf(false) }
     var findQuery by remember { mutableStateOf("") }
@@ -90,15 +103,16 @@ fun MainEditorScreen(
 
     var showRenameDialog by remember { mutableStateOf(false) }
     var showCreateNoteDialog by remember { mutableStateOf(false) }
-    var noteToSelectForPinSlot by remember { mutableStateOf<String?>(null) } // "top" or "bottom"
+    var filePickerTargetSlot by remember { mutableStateOf<String?>(null) } // "top" or "bottom"
 
     var editorRef by remember { mutableStateOf<ScribeEditText?>(null) }
+    val expandedTreeState = remember { mutableStateMapOf<String, Boolean>() }
 
     LaunchedEffect(initialNoteId) {
         if (!initialNoteId.isNullOrEmpty()) {
             editorVm.loadNote(initialNoteId)
-        } else if (bookNotes.isNotEmpty()) {
-            editorVm.loadNote(bookNotes.first().id)
+        } else if (currentBookNotes.isNotEmpty()) {
+            editorVm.loadNote(currentBookNotes.first().id)
         }
     }
 
@@ -114,133 +128,295 @@ fun MainEditorScreen(
         ModalNavigationDrawer(
             drawerState = leftDrawerState,
             drawerContent = {
-                ModalDrawerSheet {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                ModalDrawerSheet(modifier = Modifier.width(320.dp)) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp)
+                    ) {
+                        // Header
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text("Vault Explorer", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                            IconButton(onClick = { showCreateNoteDialog = true }) {
-                                Icon(Icons.Default.Add, contentDescription = "New Note")
+                            Row {
+                                SingleChoiceSegmentedButtonRow {
+                                    SegmentedButton(
+                                        selected = leftDrawerMode == "Current",
+                                        onClick = { leftDrawerMode = "Current" },
+                                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                                    ) { Text("Current", fontSize = 10.sp) }
+                                    SegmentedButton(
+                                        selected = leftDrawerMode == "Books",
+                                        onClick = { leftDrawerMode = "Books" },
+                                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                                    ) { Text("Books", fontSize = 10.sp) }
+                                }
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
 
-                        // Filter Segment: Current Book vs Vault
-                        Row(modifier = Modifier.fillMaxWidth()) {
-                            FilterChip(
-                                selected = !leftDrawerFilterAll,
-                                onClick = { leftDrawerFilterAll = false },
-                                label = { Text("Current Book") },
-                                modifier = Modifier.weight(1f)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            FilterChip(
-                                selected = leftDrawerFilterAll,
-                                onClick = { leftDrawerFilterAll = true },
-                                label = { Text("All Notes") },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-
-                    LazyColumn(
-                        modifier = Modifier.weight(1f),
-                        contentPadding = PaddingValues(horizontal = 12.dp)
-                    ) {
-                        items(bookNotes, key = { it.id }) { note ->
-                            val isSelected = note.id == activeNote?.id
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
-                                    .clickable {
-                                        editorVm.loadNote(note.id)
-                                        scope.launch { leftDrawerState.close() }
+                        // Search Bar
+                        OutlinedTextField(
+                            value = leftSearchQuery,
+                            onValueChange = { leftSearchQuery = it },
+                            placeholder = { Text("Search files & folders...") },
+                            singleLine = true,
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                            trailingIcon = {
+                                if (leftSearchQuery.isNotEmpty()) {
+                                    IconButton(onClick = { leftSearchQuery = "" }) {
+                                        Icon(Icons.Default.Clear, contentDescription = "Clear", modifier = Modifier.size(18.dp))
                                     }
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Tree / Search list
+                        val displayNotes = if (leftDrawerMode == "Current") currentBookNotes else allNotes
+                        val displayFolders = if (leftDrawerMode == "Current") currentBookFolders else allFolders
+
+                        val filteredNotes = remember(displayNotes, leftSearchQuery) {
+                            if (leftSearchQuery.isBlank()) displayNotes
+                            else displayNotes.filter {
+                                it.name.contains(leftSearchQuery, ignoreCase = true) ||
+                                it.content.contains(leftSearchQuery, ignoreCase = true) ||
+                                it.folderPath.contains(leftSearchQuery, ignoreCase = true)
+                            }
+                        }
+
+                        if (leftSearchQuery.isNotBlank()) {
+                            // Search Mode
+                            LazyColumn(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Icon(
-                                    Icons.Outlined.Description,
-                                    contentDescription = null,
-                                    tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.outline
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        note.name,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        "${note.folderPath} • ${note.content.split("\\s+".toRegex()).count { it.isNotBlank() }} words",
-                                        fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.outline
-                                    )
-                                }
-
-                                var showRowMenu by remember { mutableStateOf(false) }
-                                Box {
-                                    IconButton(
-                                        onClick = { showRowMenu = true },
-                                        modifier = Modifier.size(28.dp)
+                                items(filteredNotes, key = { it.id }) { note ->
+                                    val isSelected = note.id == activeNote?.id
+                                    Card(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                editorVm.loadNote(note.id)
+                                                if (leftSearchQuery.isNotBlank()) {
+                                                    findQuery = leftSearchQuery
+                                                    showFindBar = true
+                                                }
+                                                scope.launch { leftDrawerState.close() }
+                                            },
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                                        )
                                     ) {
-                                        Icon(Icons.Default.MoreVert, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Column(modifier = Modifier.padding(10.dp)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(Icons.Outlined.Description, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = buildHighlightedText(note.name, leftSearchQuery, MaterialTheme.colorScheme.primary),
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 14.sp
+                                                )
+                                            }
+                                            Text(
+                                                text = buildHighlightedText(note.folderPath, leftSearchQuery, MaterialTheme.colorScheme.primary),
+                                                fontSize = 11.sp,
+                                                color = MaterialTheme.colorScheme.outline
+                                            )
+                                            val snippet = remember(note.content, leftSearchQuery) {
+                                                getPreviewSnippet(note.content, leftSearchQuery)
+                                            }
+                                            if (snippet.isNotBlank()) {
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text(
+                                                    text = buildHighlightedText(snippet, leftSearchQuery, MaterialTheme.colorScheme.primary),
+                                                    fontSize = 12.sp,
+                                                    maxLines = 2,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
                                     }
-                                    DropdownMenu(
-                                        expanded = showRowMenu,
-                                        onDismissRequest = { showRowMenu = false }
-                                    ) {
-                                        DropdownMenuItem(
-                                            text = { Text("Open in Floating Window") },
-                                            onClick = {
-                                                showRowMenu = false
-                                                editorVm.openFloatingWindow(note.id)
-                                                scope.launch { leftDrawerState.close() }
+                                }
+                            }
+                        } else {
+                            // Tree Mode
+                            val folderGrouped = remember(displayNotes, displayFolders) {
+                                val map = mutableMapOf<String, MutableList<Note>>()
+                                displayNotes.forEach { n ->
+                                    val f = n.folderPath.ifBlank { "/" }
+                                    map.getOrPut(f) { mutableListOf() }.add(n)
+                                }
+                                map
+                            }
+
+                            LazyColumn(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                folderGrouped.forEach { (folderPath, notesInFolder) ->
+                                    val isExpanded = expandedTreeState[folderPath] ?: true
+                                    item(key = "folder_$folderPath") {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .clickable { expandedTreeState[folderPath] = !isExpanded }
+                                                .padding(vertical = 6.dp, horizontal = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                if (isExpanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowRight,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Icon(
+                                                if (isExpanded) Icons.Default.FolderOpen else Icons.Default.Folder,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = folderPath.substringAfterLast('/'),
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            Text(
+                                                text = "${notesInFolder.size}",
+                                                fontSize = 11.sp,
+                                                color = MaterialTheme.colorScheme.outline
+                                            )
+                                        }
+                                    }
+
+                                    if (isExpanded) {
+                                        items(notesInFolder, key = { "note_${it.id}" }) { note ->
+                                            var showMenu by remember { mutableStateOf(false) }
+                                            val isSelected = note.id == activeNote?.id
+
+                                            Box(modifier = Modifier.padding(start = 24.dp, top = 2.dp, bottom = 2.dp)) {
+                                                Card(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .combinedClickable(
+                                                            onClick = {
+                                                                editorVm.loadNote(note.id)
+                                                                scope.launch { leftDrawerState.close() }
+                                                            },
+                                                            onLongClick = { showMenu = true }
+                                                        ),
+                                                    colors = CardDefaults.cardColors(
+                                                        containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                                                    ),
+                                                    shape = RoundedCornerShape(8.dp)
+                                                ) {
+                                                    Column(modifier = Modifier.padding(8.dp)) {
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            Icon(
+                                                                Icons.Outlined.Description,
+                                                                contentDescription = null,
+                                                                modifier = Modifier.size(14.dp),
+                                                                tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.outline
+                                                            )
+                                                            Spacer(modifier = Modifier.width(6.dp))
+                                                            Text(
+                                                                text = note.name,
+                                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                                fontSize = 13.sp,
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis
+                                                            )
+                                                        }
+                                                        Text(
+                                                            text = note.folderPath,
+                                                            fontSize = 10.sp,
+                                                            color = MaterialTheme.colorScheme.outline
+                                                        )
+                                                        val preview = remember(note.content) {
+                                                            note.content.lineSequence().filter { it.isNotBlank() }.take(2).joinToString(" ")
+                                                        }
+                                                        if (preview.isNotBlank()) {
+                                                            Text(
+                                                                text = preview,
+                                                                fontSize = 11.sp,
+                                                                maxLines = 2,
+                                                                overflow = TextOverflow.Ellipsis,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                            )
+                                                        }
+                                                    }
+                                                }
+
+                                                DropdownMenu(
+                                                    expanded = showMenu,
+                                                    onDismissRequest = { showMenu = false }
+                                                ) {
+                                                    DropdownMenuItem(
+                                                        text = { Text("Open in Floating Window") },
+                                                        onClick = {
+                                                            showMenu = false
+                                                            editorVm.openFloatingWindow(note.id)
+                                                            scope.launch { leftDrawerState.close() }
+                                                        }
+                                                    )
+                                                    DropdownMenuItem(
+                                                        text = { Text("Pin to Top Slot") },
+                                                        onClick = {
+                                                            showMenu = false
+                                                            editorVm.addPinnedTop(note.id)
+                                                            scope.launch { leftDrawerState.close() }
+                                                        }
+                                                    )
+                                                    DropdownMenuItem(
+                                                        text = { Text("Pin to Bottom Slot") },
+                                                        onClick = {
+                                                            showMenu = false
+                                                            editorVm.addPinnedBottom(note.id)
+                                                            scope.launch { leftDrawerState.close() }
+                                                        }
+                                                    )
+                                                    DropdownMenuItem(
+                                                        text = { Text("Delete") },
+                                                        onClick = {
+                                                            showMenu = false
+                                                            bookVm.deleteNote(note.id)
+                                                        }
+                                                    )
+                                                }
                                             }
-                                        )
-                                        DropdownMenuItem(
-                                            text = { Text("Pin to Top Reference") },
-                                            onClick = {
-                                                showRowMenu = false
-                                                editorVm.setPinnedTop(note.id)
-                                                scope.launch { leftDrawerState.close() }
-                                            }
-                                        )
-                                        DropdownMenuItem(
-                                            text = { Text("Pin to Bottom Reference") },
-                                            onClick = {
-                                                showRowMenu = false
-                                                editorVm.setPinnedBottom(note.id)
-                                                scope.launch { leftDrawerState.close() }
-                                            }
-                                        )
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
 
-                    HorizontalDivider()
-                    TextButton(
-                        onClick = { folderPickerLauncher.launch(null) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp)
-                    ) {
-                        Icon(Icons.Default.FolderOpen, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Connect External SAF Folder")
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            TextButton(onClick = { showCreateNoteDialog = true }) {
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("New Note", fontSize = 12.sp)
+                            }
+                            TextButton(onClick = { folderPickerLauncher.launch(null) }) {
+                                Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("External SAF", fontSize = 12.sp)
+                            }
+                        }
                     }
                 }
             }
@@ -249,53 +425,227 @@ fun MainEditorScreen(
                 drawerState = rightDrawerState,
                 gesturesEnabled = true,
                 drawerContent = {
-                    ModalDrawerSheet {
-                        Spacer(modifier = Modifier.height(16.dp))
+                    ModalDrawerSheet(modifier = Modifier.width(320.dp)) {
+                        Spacer(modifier = Modifier.height(12.dp))
                         TabRow(selectedTabIndex = rightDrawerTab) {
                             Tab(
                                 selected = rightDrawerTab == 0,
                                 onClick = { rightDrawerTab = 0 },
-                                text = { Text("Reference") }
+                                text = { Text("Pinned Notes", fontWeight = FontWeight.Bold) }
                             )
                             Tab(
                                 selected = rightDrawerTab == 1,
                                 onClick = { rightDrawerTab = 1 },
-                                text = { Text("Outline (${outline.size})") }
+                                text = { Text("Outline (${outline.size})", fontWeight = FontWeight.Bold) }
                             )
                         }
 
                         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
                         if (rightDrawerTab == 0) {
-                            // Pinned Notes Reference Slots (Top & Bottom)
+                            // Split Screen Pinned Notes View (Top & Bottom)
                             Column(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .padding(12.dp)
-                                    .verticalScroll(rememberScrollState()),
-                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                                    .padding(8.dp)
                             ) {
-                                // Slot 1: Top Reference
-                                ReferenceSlotCard(
-                                    slotTitle = "Top Reference Slot",
-                                    pinnedNoteId = pinnedTopNoteId,
-                                    allNotes = bookNotes,
-                                    onSelectNoteClick = { noteToSelectForPinSlot = "top" },
-                                    onUnpin = { editorVm.setPinnedTop(null) },
-                                    onOpenInEditor = { id -> editorVm.loadNote(id) }
-                                )
+                                // Top Slot Half
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                                ) {
+                                    val currentTopId = pinnedTopNotes.getOrNull(pinnedTopIndex)
+                                    val currentTopNote = remember(currentTopId, allNotes) {
+                                        allNotes.firstOrNull { it.id == currentTopId }
+                                    }
 
-                                HorizontalDivider()
+                                    if (currentTopNote == null) {
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .clickable { filePickerTargetSlot = "top" },
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.Center
+                                        ) {
+                                            Icon(
+                                                Icons.Default.AddCircleOutline,
+                                                contentDescription = "Pick a note to pin",
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(36.dp)
+                                            )
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Text(
+                                                "Pick a note to pin",
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = MaterialTheme.colorScheme.outline
+                                            )
+                                        }
+                                    } else {
+                                        Column(modifier = Modifier.fillMaxSize()) {
+                                            // Split Screen Pure Text View
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .fillMaxWidth()
+                                                    .verticalScroll(rememberScrollState())
+                                                    .padding(12.dp)
+                                            ) {
+                                                Column {
+                                                    Text(
+                                                        currentTopNote.name,
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 15.sp,
+                                                        color = MaterialTheme.colorScheme.primary
+                                                    )
+                                                    Spacer(modifier = Modifier.height(6.dp))
+                                                    Text(
+                                                        currentTopNote.content.ifBlank { "(Empty note content)" },
+                                                        fontSize = 12.sp,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            }
+                                        }
 
-                                // Slot 2: Bottom Reference
-                                ReferenceSlotCard(
-                                    slotTitle = "Bottom Reference Slot",
-                                    pinnedNoteId = pinnedBottomNoteId,
-                                    allNotes = bookNotes,
-                                    onSelectNoteClick = { noteToSelectForPinSlot = "bottom" },
-                                    onUnpin = { editorVm.setPinnedBottom(null) },
-                                    onOpenInEditor = { id -> editorVm.loadNote(id) }
-                                )
+                                        // Top Right Actions Overlay
+                                        Row(
+                                            modifier = Modifier
+                                                .align(Alignment.TopEnd)
+                                                .padding(4.dp)
+                                                .background(
+                                                    MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                                                    CircleShape
+                                                )
+                                                .padding(horizontal = 4.dp, vertical = 2.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            if (pinnedTopNotes.size > 1) {
+                                                IconButton(onClick = { editorVm.prevPinnedTop() }, modifier = Modifier.size(24.dp)) {
+                                                    Icon(Icons.Default.KeyboardArrowLeft, contentDescription = "Prev", modifier = Modifier.size(16.dp))
+                                                }
+                                                IconButton(onClick = { editorVm.nextPinnedTop() }, modifier = Modifier.size(24.dp)) {
+                                                    Icon(Icons.Default.KeyboardArrowRight, contentDescription = "Next", modifier = Modifier.size(16.dp))
+                                                }
+                                            }
+                                            IconButton(onClick = { filePickerTargetSlot = "top" }, modifier = Modifier.size(24.dp)) {
+                                                Icon(Icons.Default.SwapHoriz, contentDescription = "Switch Note", modifier = Modifier.size(16.dp))
+                                            }
+                                            IconButton(onClick = { editorVm.loadNote(currentTopNote.id) }, modifier = Modifier.size(24.dp)) {
+                                                Icon(Icons.Default.Edit, contentDescription = "Edit in Main", modifier = Modifier.size(16.dp))
+                                            }
+                                            IconButton(onClick = { filePickerTargetSlot = "top" }, modifier = Modifier.size(24.dp)) {
+                                                Icon(Icons.Default.Add, contentDescription = "Add More Notes", modifier = Modifier.size(16.dp))
+                                            }
+                                            IconButton(onClick = { editorVm.removePinnedTop(currentTopNote.id) }, modifier = Modifier.size(24.dp)) {
+                                                Icon(Icons.Default.Close, contentDescription = "Unpin", modifier = Modifier.size(16.dp))
+                                            }
+                                        }
+                                    }
+                                }
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
+
+                                // Bottom Slot Half
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                                ) {
+                                    val currentBottomId = pinnedBottomNotes.getOrNull(pinnedBottomIndex)
+                                    val currentBottomNote = remember(currentBottomId, allNotes) {
+                                        allNotes.firstOrNull { it.id == currentBottomId }
+                                    }
+
+                                    if (currentBottomNote == null) {
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .clickable { filePickerTargetSlot = "bottom" },
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.Center
+                                        ) {
+                                            Icon(
+                                                Icons.Default.AddCircleOutline,
+                                                contentDescription = "Pick a note to pin",
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(36.dp)
+                                            )
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Text(
+                                                "Pick a note to pin",
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = MaterialTheme.colorScheme.outline
+                                            )
+                                        }
+                                    } else {
+                                        Column(modifier = Modifier.fillMaxSize()) {
+                                            // Split Screen Pure Text View
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .fillMaxWidth()
+                                                    .verticalScroll(rememberScrollState())
+                                                    .padding(12.dp)
+                                            ) {
+                                                Column {
+                                                    Text(
+                                                        currentBottomNote.name,
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 15.sp,
+                                                        color = MaterialTheme.colorScheme.primary
+                                                    )
+                                                    Spacer(modifier = Modifier.height(6.dp))
+                                                    Text(
+                                                        currentBottomNote.content.ifBlank { "(Empty note content)" },
+                                                        fontSize = 12.sp,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        // Top Right Actions Overlay
+                                        Row(
+                                            modifier = Modifier
+                                                .align(Alignment.TopEnd)
+                                                .padding(4.dp)
+                                                .background(
+                                                    MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                                                    CircleShape
+                                                )
+                                                .padding(horizontal = 4.dp, vertical = 2.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            if (pinnedBottomNotes.size > 1) {
+                                                IconButton(onClick = { editorVm.prevPinnedBottom() }, modifier = Modifier.size(24.dp)) {
+                                                    Icon(Icons.Default.KeyboardArrowLeft, contentDescription = "Prev", modifier = Modifier.size(16.dp))
+                                                }
+                                                IconButton(onClick = { editorVm.nextPinnedBottom() }, modifier = Modifier.size(24.dp)) {
+                                                    Icon(Icons.Default.KeyboardArrowRight, contentDescription = "Next", modifier = Modifier.size(16.dp))
+                                                }
+                                            }
+                                            IconButton(onClick = { filePickerTargetSlot = "bottom" }, modifier = Modifier.size(24.dp)) {
+                                                Icon(Icons.Default.SwapHoriz, contentDescription = "Switch Note", modifier = Modifier.size(16.dp))
+                                            }
+                                            IconButton(onClick = { editorVm.loadNote(currentBottomNote.id) }, modifier = Modifier.size(24.dp)) {
+                                                Icon(Icons.Default.Edit, contentDescription = "Edit in Main", modifier = Modifier.size(16.dp))
+                                            }
+                                            IconButton(onClick = { filePickerTargetSlot = "bottom" }, modifier = Modifier.size(24.dp)) {
+                                                Icon(Icons.Default.Add, contentDescription = "Add More Notes", modifier = Modifier.size(16.dp))
+                                            }
+                                            IconButton(onClick = { editorVm.removePinnedBottom(currentBottomNote.id) }, modifier = Modifier.size(24.dp)) {
+                                                Icon(Icons.Default.Close, contentDescription = "Unpin", modifier = Modifier.size(16.dp))
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         } else {
                             // Outline Tab
@@ -303,15 +653,22 @@ fun MainEditorScreen(
                                 Box(
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .padding(16.dp),
+                                        .padding(24.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Text("No markdown headings found (# H1, ## H2)", color = MaterialTheme.colorScheme.outline)
+                                    Text(
+                                        "No headings yet. Use # Heading to structure your writing.",
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.outline
+                                    )
                                 }
                             } else {
-                                LazyColumn(contentPadding = PaddingValues(12.dp)) {
+                                LazyColumn(
+                                    contentPadding = PaddingValues(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
                                     items(outline) { entry ->
-                                        Row(
+                                        Card(
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .clickable {
@@ -322,23 +679,48 @@ fun MainEditorScreen(
                                                         }
                                                     }
                                                     scope.launch { rightDrawerState.close() }
-                                                }
-                                                .padding(start = (entry.level * 10).dp, top = 8.dp, bottom = 8.dp),
-                                            verticalAlignment = Alignment.CenterVertically
+                                                },
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                                         ) {
-                                            SuggestionChip(
-                                                onClick = {},
-                                                label = { Text("H${entry.level}", fontSize = 10.sp) },
-                                                modifier = Modifier.height(24.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Text(
-                                                text = entry.text,
-                                                fontSize = 14.sp,
-                                                fontWeight = if (entry.level == 1) FontWeight.Bold else FontWeight.Medium,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
+                                            Column(modifier = Modifier.padding(10.dp)) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(4.dp),
+                                                        color = MaterialTheme.colorScheme.primary
+                                                    ) {
+                                                        Text(
+                                                            "H${entry.level}",
+                                                            fontSize = 10.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = MaterialTheme.colorScheme.onPrimary,
+                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                        )
+                                                    }
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Text(
+                                                        text = entry.text,
+                                                        fontSize = 14.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
+                                                val headingPreview = remember(activeNote?.content, entry.text) {
+                                                    getOutlineHeadingPreview(activeNote?.content ?: "", entry.text)
+                                                }
+                                                if (headingPreview.isNotBlank()) {
+                                                    Spacer(modifier = Modifier.height(4.dp))
+                                                    Text(
+                                                        text = headingPreview,
+                                                        fontSize = 12.sp,
+                                                        maxLines = 2,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        color = MaterialTheme.colorScheme.outline
+                                                    )
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -387,7 +769,7 @@ fun MainEditorScreen(
                                         Icon(Icons.Default.Search, contentDescription = "Find")
                                     }
                                     IconButton(onClick = { scope.launch { rightDrawerState.open() } }) {
-                                        Icon(Icons.Default.FormatListBulleted, contentDescription = "Outline & Reference")
+                                        Icon(Icons.Default.FormatListBulleted, contentDescription = "Outline & Pinned")
                                     }
                                     IconButton(onClick = { editorVm.toggleZen() }) {
                                         Icon(Icons.Default.Fullscreen, contentDescription = "Zen Mode")
@@ -654,6 +1036,12 @@ fun MainEditorScreen(
                                     activeNote?.let { note ->
                                         if (editorRef?.text?.toString() != note.content) {
                                             editorRef?.setText(note.content)
+                                            if (findQuery.isNotBlank()) {
+                                                val pos = note.content.indexOf(findQuery, ignoreCase = true)
+                                                if (pos >= 0) {
+                                                    editorRef?.setSelection(pos)
+                                                }
+                                            }
                                         }
                                     }
                                 },
@@ -679,7 +1067,7 @@ fun MainEditorScreen(
         // Floating Windows Overlay
         FloatingWindowOverlay(
             floatingWindows = floatingWindows,
-            notes = bookNotes,
+            notes = currentBookNotes,
             onCloseWindow = { id -> editorVm.closeFloatingWindow(id) },
             onToggleCollapse = { id -> editorVm.toggleCollapseFloatingWindow(id) },
             onMoveWindow = { id, x, y -> editorVm.moveFloatingWindow(id, x, y) }
@@ -749,101 +1137,161 @@ fun MainEditorScreen(
         )
     }
 
-    noteToSelectForPinSlot?.let { slot ->
-        AlertDialog(
-            onDismissRequest = { noteToSelectForPinSlot = null },
-            title = { Text("Select Reference Note for $slot slot") },
-            text = {
-                LazyColumn(
-                    modifier = Modifier.heightIn(max = 300.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    items(bookNotes, key = { it.id }) { note ->
-                        TextButton(
-                            onClick = {
-                                if (slot == "top") editorVm.setPinnedTop(note.id)
-                                else editorVm.setPinnedBottom(note.id)
-                                noteToSelectForPinSlot = null
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(note.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                    }
+    filePickerTargetSlot?.let { targetSlot ->
+        FileExplorerOverlayDialog(
+            allNotes = if (leftDrawerMode == "Current") currentBookNotes else allNotes,
+            allFolders = if (leftDrawerMode == "Current") currentBookFolders else allFolders,
+            onSelectNote = { note ->
+                if (targetSlot == "top") {
+                    editorVm.addPinnedTop(note.id)
+                } else {
+                    editorVm.addPinnedBottom(note.id)
                 }
+                filePickerTargetSlot = null
             },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { noteToSelectForPinSlot = null }) { Text("Cancel") }
-            }
+            onDismiss = { filePickerTargetSlot = null }
         )
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ReferenceSlotCard(
-    slotTitle: String,
-    pinnedNoteId: String?,
+private fun FileExplorerOverlayDialog(
     allNotes: List<Note>,
-    onSelectNoteClick: () -> Unit,
-    onUnpin: () -> Unit,
-    onOpenInEditor: (String) -> Unit
+    allFolders: List<Folder>,
+    onSelectNote: (Note) -> Unit,
+    onDismiss: () -> Unit
 ) {
-    val pinnedNote = remember(pinnedNoteId, allNotes) {
-        allNotes.firstOrNull { it.id == pinnedNoteId }
+    val expandedPaths = remember { mutableStateMapOf<String, Boolean>() }
+    val folderGrouped = remember(allNotes, allFolders) {
+        val map = mutableMapOf<String, MutableList<Note>>()
+        allNotes.forEach { n ->
+            val f = n.folderPath.ifBlank { "/" }
+            map.getOrPut(f) { mutableListOf() }.add(n)
+        }
+        map
     }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Pick a note to pin", fontWeight = FontWeight.Bold) },
+        text = {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 360.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Text(slotTitle, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
-                if (pinnedNote != null) {
-                    IconButton(onClick = onUnpin, modifier = Modifier.size(24.dp)) {
-                        Icon(Icons.Default.Close, contentDescription = "Unpin", modifier = Modifier.size(16.dp))
+                folderGrouped.forEach { (folderPath, notesInFolder) ->
+                    val isExpanded = expandedPaths[folderPath] ?: true
+                    item(key = "f_$folderPath") {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(6.dp))
+                                .clickable { expandedPaths[folderPath] = !isExpanded }
+                                .padding(vertical = 6.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                if (isExpanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowRight,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(
+                                if (isExpanded) Icons.Default.FolderOpen else Icons.Default.Folder,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                folderPath.substringAfterLast('/'),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+
+                    if (isExpanded) {
+                        items(notesInFolder, key = { "n_${it.id}" }) { note ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 20.dp, top = 2.dp, bottom = 2.dp)
+                                    .clickable { onSelectNote(note) },
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(8.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Outlined.Description, contentDescription = null, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(note.name, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    }
+                                    val preview = remember(note.content) {
+                                        note.content.lineSequence().filter { it.isNotBlank() }.take(2).joinToString(" ")
+                                    }
+                                    if (preview.isNotBlank()) {
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            preview,
+                                            fontSize = 11.sp,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                            color = MaterialTheme.colorScheme.outline
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            if (pinnedNote == null) {
-                OutlinedButton(
-                    onClick = onSelectNoteClick,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Default.PushPin, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Pin Note to Slot", fontSize = 12.sp)
-                }
-            } else {
-                Text(pinnedNote.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Spacer(modifier = Modifier.height(4.dp))
-                Box(
-                    modifier = Modifier
-                        .heightIn(max = 100.dp)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    Text(
-                        pinnedNote.content.ifBlank { "Empty note" },
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-                    TextButton(onClick = { onOpenInEditor(pinnedNote.id) }) {
-                        Text("Open in Editor", fontSize = 12.sp)
-                    }
-                }
-            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
         }
+    )
+}
+
+private fun getOutlineHeadingPreview(content: String, headingText: String): String {
+    val pos = content.indexOf(headingText)
+    if (pos < 0) return ""
+    val after = content.substring(pos + headingText.length).trimStart()
+    val lines = after.lineSequence().filter { it.isNotBlank() && !it.trimStart().startsWith("#") }.take(2).toList()
+    return lines.joinToString(" ")
+}
+
+private fun getPreviewSnippet(content: String, query: String): String {
+    if (query.isBlank()) return content.take(100)
+    val idx = content.indexOf(query, ignoreCase = true)
+    if (idx < 0) return content.take(100)
+    val start = (idx - 30).coerceAtLeast(0)
+    val end = (idx + query.length + 50).coerceAtMost(content.length)
+    return (if (start > 0) "..." else "") + content.substring(start, end) + (if (end < content.length) "..." else "")
+}
+
+private fun buildHighlightedText(fullText: String, query: String, highlightColor: Color) = buildAnnotatedString {
+    if (query.isBlank()) {
+        append(fullText)
+        return@buildAnnotatedString
+    }
+    var startIndex = 0
+    while (true) {
+        val matchIndex = fullText.indexOf(query, startIndex, ignoreCase = true)
+        if (matchIndex < 0) {
+            append(fullText.substring(startIndex))
+            break
+        }
+        append(fullText.substring(startIndex, matchIndex))
+        withStyle(style = SpanStyle(background = highlightColor.copy(alpha = 0.35f), fontWeight = FontWeight.Bold)) {
+            append(fullText.substring(matchIndex, matchIndex + query.length))
+        }
+        startIndex = matchIndex + query.length
     }
 }
 

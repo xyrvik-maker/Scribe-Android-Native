@@ -51,6 +51,7 @@ fun SheetsScreen(
     var searchQuery by remember { mutableStateOf("") }
 
     var showCreateDialog by remember { mutableStateOf(false) }
+    var entryToDetail by remember { mutableStateOf<WorldEntry?>(null) }
     var entryToEdit by remember { mutableStateOf<WorldEntry?>(null) }
     var entryToDelete by remember { mutableStateOf<WorldEntry?>(null) }
 
@@ -144,7 +145,7 @@ fun SheetsScreen(
                     items(filteredEntries, key = { it.id }) { entry ->
                         WorldEntryCard(
                             entry = entry,
-                            onClick = { entryToEdit = entry },
+                            onClick = { entryToDetail = entry },
                             onDuplicate = { vm.duplicateEntry(entry.id) },
                             onDelete = { entryToDelete = entry }
                         )
@@ -195,6 +196,17 @@ fun SheetsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showCreateDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    entryToDetail?.let { entry ->
+        WorldEntryDetailDialog(
+            entry = entry,
+            onDismiss = { entryToDetail = null },
+            onEdit = {
+                entryToEdit = entry
+                entryToDetail = null
             }
         )
     }
@@ -479,3 +491,185 @@ private fun EditWorldEntryDialog(
         }
     )
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WorldEntryDetailDialog(
+    entry: WorldEntry,
+    onDismiss: () -> Unit,
+    onEdit: () -> Unit
+) {
+    val gson = remember { Gson() }
+    val fieldsType = object : TypeToken<List<SheetsViewModel.Companion.Field>>() {}.type
+    val fields: List<SheetsViewModel.Companion.Field> = remember(entry) {
+        try {
+            gson.fromJson(entry.fieldsJson, fieldsType) ?: emptyList()
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    BasicAlertDialog(
+        onDismissRequest = onDismiss
+    ) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    // Top Close Button
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        IconButton(onClick = onDismiss) {
+                            Icon(Icons.Default.Close, contentDescription = "Close")
+                        }
+                    }
+
+                    // Large Avatar Image at Top Center
+                    if (!entry.imageUri.isNullOrEmpty()) {
+                        AsyncImage(
+                            model = entry.imageUri,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(110.dp)
+                                .clip(CircleShape)
+                                .border(3.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(110.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primaryContainer),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                when (entry.type.lowercase()) {
+                                    "character" -> Icons.Default.Person
+                                    "location" -> Icons.Default.Place
+                                    "faction" -> Icons.Default.Group
+                                    "item" -> Icons.Default.Category
+                                    "lore" -> Icons.Default.MenuBook
+                                    else -> Icons.Default.Description
+                                },
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(54.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Bold Large Heading Name
+                    Text(
+                        text = entry.name,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // Category Badge
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Text(
+                            text = entry.type.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() },
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)
+                        )
+                    }
+
+                    if (entry.summary.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Text(
+                                    text = "Overview",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = entry.summary,
+                                    fontSize = 14.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+
+                    if (fields.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                fields.forEachIndexed { idx, field ->
+                                    if (idx > 0) {
+                                        HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
+                                    }
+                                    Column(modifier = Modifier.fillMaxWidth()) {
+                                        Text(
+                                            text = field.label,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = field.value.ifBlank { "-" },
+                                            fontSize = 14.sp,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(60.dp)) // Extra space for FAB
+                }
+
+                // Edit Floating Action Button in Bottom Right
+                FloatingActionButton(
+                    onClick = onEdit,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(4.dp)
+                ) {
+                    Icon(Icons.Default.Edit, contentDescription = "Edit Sheet")
+                }
+            }
+        }
+    }
+}
+
