@@ -34,11 +34,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -421,11 +423,13 @@ fun MainEditorScreen(
                 }
             }
         ) {
-            ModalNavigationDrawer(
-                drawerState = rightDrawerState,
-                gesturesEnabled = true,
-                drawerContent = {
-                    ModalDrawerSheet(modifier = Modifier.width(320.dp)) {
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                ModalNavigationDrawer(
+                    drawerState = rightDrawerState,
+                    gesturesEnabled = true,
+                    drawerContent = {
+                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                            ModalDrawerSheet(modifier = Modifier.width(320.dp)) {
                         Spacer(modifier = Modifier.height(12.dp))
                         TabRow(selectedTabIndex = rightDrawerTab) {
                             Tab(
@@ -728,7 +732,9 @@ fun MainEditorScreen(
                         }
                     }
                 }
-            ) {
+            }
+        ) {
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 Scaffold(
                     topBar = {
                         if (!zenMode) {
@@ -1063,6 +1069,8 @@ fun MainEditorScreen(
                 }
             }
         }
+    }
+}
 
         // Floating Windows Overlay
         FloatingWindowOverlay(
