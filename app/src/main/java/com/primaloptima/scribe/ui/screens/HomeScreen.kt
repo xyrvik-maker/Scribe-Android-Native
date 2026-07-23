@@ -12,6 +12,8 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -29,6 +31,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -39,8 +42,10 @@ import com.primaloptima.scribe.data.Book
 import com.primaloptima.scribe.data.Folder
 import com.primaloptima.scribe.data.Note
 import com.primaloptima.scribe.util.CoverUtils
+import com.primaloptima.scribe.util.ThemeDataStoreRepo
 import com.primaloptima.scribe.viewmodel.HomeViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -56,10 +61,21 @@ fun HomeScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val repo = remember { ThemeDataStoreRepo(context) }
 
-    // 0: Books, 1: Files, 2: Notes, 3: Statistic
+    // 0: Books, 1: Notes, 2: Statistics
     var selectedNavTab by remember { mutableIntStateOf(0) }
     var isGridMode by remember { mutableStateOf(true) }
+    var gridColumns by remember { mutableIntStateOf(2) }
+
+    LaunchedEffect(Unit) {
+        repo.gridColumnsFlow.collectLatest { gridColumns = it }
+    }
+
+    val pagerState = rememberPagerState(initialPage = 0) { 3 }
+    LaunchedEffect(pagerState.currentPage) {
+        selectedNavTab = pagerState.currentPage
+    }
 
     // Search state
     var isSearching by remember { mutableStateOf(false) }
@@ -202,6 +218,27 @@ fun HomeScreen(
                             }
                         }
                         if (selectedNavTab == 0 && !isSearching) {
+                            if (isGridMode) {
+                                IconButton(onClick = {
+                                    val nextCols = if (gridColumns == 2) 3 else 2
+                                    gridColumns = nextCols
+                                    scope.launch { repo.setGridColumns(nextCols) }
+                                }) {
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = MaterialTheme.colorScheme.primaryContainer,
+                                        modifier = Modifier.padding(2.dp)
+                                    ) {
+                                        Text(
+                                            text = "${gridColumns}C",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
                             IconButton(onClick = { isGridMode = !isGridMode }) {
                                 Icon(
                                     if (isGridMode) Icons.Default.ViewList else Icons.Default.GridView,
@@ -246,27 +283,33 @@ fun HomeScreen(
                 NavigationBar {
                     NavigationBarItem(
                         selected = selectedNavTab == 0 && !isSearching,
-                        onClick = { selectedNavTab = 0; isSearching = false },
+                        onClick = {
+                            selectedNavTab = 0
+                            isSearching = false
+                            scope.launch { pagerState.animateScrollToPage(0) }
+                        },
                         icon = { Icon(Icons.Default.Book, contentDescription = "Books") },
                         label = { Text("Books") }
                     )
                     NavigationBarItem(
                         selected = selectedNavTab == 1 && !isSearching,
-                        onClick = { selectedNavTab = 1; isSearching = false },
-                        icon = { Icon(Icons.Default.Folder, contentDescription = "Files") },
-                        label = { Text("Files") }
-                    )
-                    NavigationBarItem(
-                        selected = selectedNavTab == 2 && !isSearching,
-                        onClick = { selectedNavTab = 2; isSearching = false },
+                        onClick = {
+                            selectedNavTab = 1
+                            isSearching = false
+                            scope.launch { pagerState.animateScrollToPage(1) }
+                        },
                         icon = { Icon(Icons.Default.StickyNote2, contentDescription = "Notes") },
                         label = { Text("Notes") }
                     )
                     NavigationBarItem(
-                        selected = selectedNavTab == 3 && !isSearching,
-                        onClick = { selectedNavTab = 3; isSearching = false },
-                        icon = { Icon(Icons.Default.BarChart, contentDescription = "Statistic") },
-                        label = { Text("Statistic") }
+                        selected = selectedNavTab == 2 && !isSearching,
+                        onClick = {
+                            selectedNavTab = 2
+                            isSearching = false
+                            scope.launch { pagerState.animateScrollToPage(2) }
+                        },
+                        icon = { Icon(Icons.Default.BarChart, contentDescription = "Statistics") },
+                        label = { Text("Statistics") }
                     )
                 }
             },
@@ -275,8 +318,7 @@ fun HomeScreen(
                     FloatingActionButton(onClick = { showCreateDialog = true }) {
                         Icon(Icons.Default.Add, contentDescription = "New Book")
                     }
-                } else if (selectedNavTab == 2) {
-                    // Quick Notes Auto-create FAB
+                } else if (selectedNavTab == 1) {
                     ExtendedFloatingActionButton(
                         onClick = {
                             vm.createQuickNote { note ->
@@ -312,49 +354,43 @@ fun HomeScreen(
                         }
                     )
                 } else {
-                    when (selectedNavTab) {
-                        0 -> BooksTabContent(
-                            books = vm.sortedBooks(allBooks),
-                            isGridMode = isGridMode,
-                            wordCounts = bookWordCounts,
-                            fileCounts = bookFileCounts,
-                            folderCounts = bookFolderCounts,
-                            allNotes = allNotes,
-                            onOpen = onOpenBook,
-                            onRename = { bookToRename = it },
-                            onChangeCover = {
-                                bookToChangeCover = it
-                                coverPickerLauncher.launch("image/*")
-                            },
-                            onDelete = { bookToDelete = it }
-                        )
-                        1 -> FilesTabContent(
-                            allBooks = allBooks,
-                            allNotes = allNotes,
-                            allFolders = allFolders,
-                            onOpenNote = { note ->
-                                context.startActivity(
-                                    Intent(context, MainActivity::class.java)
-                                        .putExtra(MainActivity.EXTRA_NOTE_ID, note.id)
-                                        .putExtra(MainActivity.EXTRA_BOOK_ID, note.bookId)
-                                )
-                            }
-                        )
-                        2 -> NotesTabContent(
-                            allNotes = allNotes,
-                            onOpenNote = { note ->
-                                context.startActivity(
-                                    Intent(context, MainActivity::class.java)
-                                        .putExtra(MainActivity.EXTRA_NOTE_ID, note.id)
-                                        .putExtra(MainActivity.EXTRA_BOOK_ID, note.bookId)
-                                )
-                            }
-                        )
-                        3 -> MainStatisticsTabContent(
-                            allBooks = allBooks,
-                            allNotes = allNotes,
-                            allFolders = allFolders
-                        )
+                    HorizontalPager(
+                        state = pagerState,
+                        modifier = Modifier.fillMaxSize()
+                    ) { page ->
+                        when (page) {
+                            0 -> BooksTabContent(
+                                books = vm.sortedBooks(allBooks),
+                                isGridMode = isGridMode,
+                                gridColumns = gridColumns,
+                                wordCounts = bookWordCounts,
+                                fileCounts = bookFileCounts,
+                                folderCounts = bookFolderCounts,
+                                allNotes = allNotes,
+                                onOpen = onOpenBook,
+                                onRename = { bookToRename = it },
+                                onChangeCover = {
+                                    bookToChangeCover = it
+                                    coverPickerLauncher.launch("image/*")
+                                },
+                                onDelete = { bookToDelete = it }
+                            )
+                            1 -> NotesTabContent(
+                                allNotes = allNotes,
+                                onOpenNote = { note ->
+                                    context.startActivity(
+                                        Intent(context, MainActivity::class.java)
+                                            .putExtra(MainActivity.EXTRA_NOTE_ID, note.id)
+                                            .putExtra(MainActivity.EXTRA_BOOK_ID, note.bookId)
+                                    )
+                                }
+                            )
+                            2 -> MainStatisticsTabContent(
+                                allBooks = allBooks,
+                                allNotes = allNotes,
+                                allFolders = allFolders
+                            )
+                        }
                     }
                 }
             }
@@ -446,6 +482,7 @@ fun HomeScreen(
 private fun BooksTabContent(
     books: List<Book>,
     isGridMode: Boolean,
+    gridColumns: Int,
     wordCounts: Map<String, Int>,
     fileCounts: Map<String, Int>,
     folderCounts: Map<String, Int>,
@@ -471,7 +508,7 @@ private fun BooksTabContent(
         }
     } else if (isGridMode) {
         LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
+            columns = GridCells.Fixed(gridColumns),
             contentPadding = PaddingValues(16.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -492,7 +529,7 @@ private fun BooksTabContent(
     } else {
         LazyColumn(
             contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.fillMaxSize()
         ) {
             items(books, key = { it.id }) { book ->
@@ -529,79 +566,85 @@ private fun BookGridCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(210.dp)
             .clickable { onOpen() },
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        shape = RoundedCornerShape(8.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            if (book.coverUri != null) {
-                AsyncImage(
-                    model = book.coverUri,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.4f))
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Outlined.Book,
-                        contentDescription = null,
-                        modifier = Modifier.size(56.dp),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f)
-                    )
-                }
-            }
-
-            Column(
+        Column(
+            modifier = Modifier.padding(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(
                 modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(12.dp)
+                    .fillMaxWidth()
+                    .aspectRatio(0.72f)
+                    .clip(RoundedCornerShape(1.dp))
             ) {
-                Text(
-                    text = book.title,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    color = if (book.coverUri != null) Color.White else MaterialTheme.colorScheme.onPrimaryContainer
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = "$words words • $files files",
-                    fontSize = 11.sp,
-                    color = if (book.coverUri != null) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
-                )
+                if (book.coverUri != null) {
+                    AsyncImage(
+                        model = book.coverUri,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Outlined.Book,
+                            contentDescription = null,
+                            modifier = Modifier.size(44.dp),
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+
+                Box(modifier = Modifier.align(Alignment.TopEnd)) {
+                    IconButton(onClick = { showMenu = true }) {
+                        Icon(
+                            Icons.Default.MoreVert,
+                            contentDescription = "Menu",
+                            tint = if (book.coverUri != null) Color.White else MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false }
+                    ) {
+                        DropdownMenuItem(text = { Text("Open") }, onClick = { showMenu = false; onOpen() })
+                        DropdownMenuItem(text = { Text("Rename") }, onClick = { showMenu = false; onRename() })
+                        DropdownMenuItem(text = { Text("Change Cover") }, onClick = { showMenu = false; onChangeCover() })
+                        DropdownMenuItem(text = { Text("Delete") }, onClick = { showMenu = false; onDelete() })
+                    }
+                }
             }
 
-            Box(modifier = Modifier.align(Alignment.TopEnd)) {
-                IconButton(onClick = { showMenu = true }) {
-                    Icon(
-                        Icons.Default.MoreVert,
-                        contentDescription = "Menu",
-                        tint = if (book.coverUri != null) Color.White else MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-                DropdownMenu(
-                    expanded = showMenu,
-                    onDismissRequest = { showMenu = false }
-                ) {
-                    DropdownMenuItem(text = { Text("Open") }, onClick = { showMenu = false; onOpen() })
-                    DropdownMenuItem(text = { Text("Rename") }, onClick = { showMenu = false; onRename() })
-                    DropdownMenuItem(text = { Text("Change Cover") }, onClick = { showMenu = false; onChangeCover() })
-                    DropdownMenuItem(text = { Text("Delete") }, onClick = { showMenu = false; onDelete() })
-                }
-            }
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(
+                text = book.title,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp)
+            )
+
+            Spacer(modifier = Modifier.height(2.dp))
+
+            Text(
+                text = "$words words • $files files",
+                fontSize = 10.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
         }
     }
 }
@@ -614,9 +657,9 @@ private fun BookListRow(
     folders: Int,
     introSnippet: String,
     onOpen: () -> Unit,
-    onRename: () -> Unit,
-    onChangeCover: () -> Unit,
-    onDelete: () -> Unit
+    onRename: (Book) -> Unit,
+    onChangeCover: (Book) -> Unit,
+    onDelete: (Book) -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
@@ -626,29 +669,36 @@ private fun BookListRow(
             .clickable { onOpen() },
         shape = RoundedCornerShape(12.dp)
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
+        Column(modifier = Modifier.padding(12.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (book.coverUri != null) {
-                    AsyncImage(
-                        model = book.coverUri,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .size(54.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                    )
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .size(54.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(MaterialTheme.colorScheme.primaryContainer),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Default.Book, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                Box(
+                    modifier = Modifier
+                        .size(width = 56.dp, height = 80.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                ) {
+                    if (book.coverUri != null) {
+                        AsyncImage(
+                            model = book.coverUri,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(MaterialTheme.colorScheme.primaryContainer),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.Book,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
                     }
                 }
 
@@ -656,7 +706,7 @@ private fun BookListRow(
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(book.title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    Spacer(modifier = Modifier.height(2.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -673,101 +723,9 @@ private fun BookListRow(
                     }
                     DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                         DropdownMenuItem(text = { Text("Open") }, onClick = { showMenu = false; onOpen() })
-                        DropdownMenuItem(text = { Text("Rename") }, onClick = { showMenu = false; onRename() })
-                        DropdownMenuItem(text = { Text("Change Cover") }, onClick = { showMenu = false; onChangeCover() })
-                        DropdownMenuItem(text = { Text("Delete") }, onClick = { showMenu = false; onDelete() })
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = introSnippet,
-                fontSize = 12.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-            )
-        }
-    }
-}
-
-@Composable
-private fun FilesTabContent(
-    allBooks: List<Book>,
-    allNotes: List<Note>,
-    allFolders: List<Folder>,
-    onOpenNote: (Note) -> Unit
-) {
-    if (allNotes.isEmpty()) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("No files or notes in vault yet", color = MaterialTheme.colorScheme.outline)
-        }
-    } else {
-        LazyColumn(
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxSize()
-        ) {
-            allBooks.forEach { book ->
-                val notesInBook = allNotes.filter { it.bookId == book.id }
-                if (notesInBook.isNotEmpty()) {
-                    item {
-                        Text(
-                            text = book.title.uppercase(),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
-                        )
-                    }
-                    items(notesInBook, key = { "file_${it.id}" }) { note ->
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onOpenNote(note) },
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .padding(12.dp)
-                                    .fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    Icons.Outlined.Description,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(note.name, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                                    Text(
-                                        text = "${book.title} / ${note.folderPath}",
-                                        fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.outline
-                                    )
-                                    if (note.content.isNotBlank()) {
-                                        Text(
-                                            text = note.content.take(80).replace("\n", " "),
-                                            fontSize = 12.sp,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                                Text(
-                                    text = "${note.content.split("\\s+".toRegex()).count { it.isNotBlank() }} w",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.outline
-                                )
-                            }
-                        }
+                        DropdownMenuItem(text = { Text("Rename") }, onClick = { showMenu = false; onRename(book) })
+                        DropdownMenuItem(text = { Text("Change Cover") }, onClick = { showMenu = false; onChangeCover(book) })
+                        DropdownMenuItem(text = { Text("Delete") }, onClick = { showMenu = false; onDelete(book) })
                     }
                 }
             }
@@ -780,11 +738,7 @@ private fun NotesTabContent(
     allNotes: List<Note>,
     onOpenNote: (Note) -> Unit
 ) {
-    val quickNotes = remember(allNotes) {
-        allNotes.filter { it.folderPath == "/Quick Notes" || it.bookId == Note.DEFAULT_BOOK_ID }
-    }
-
-    if (quickNotes.isEmpty()) {
+    if (allNotes.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(
@@ -794,23 +748,23 @@ private fun NotesTabContent(
                     tint = MaterialTheme.colorScheme.outline
                 )
                 Spacer(modifier = Modifier.height(16.dp))
-                Text("No Quick Notes yet", fontSize = 18.sp, color = MaterialTheme.colorScheme.outline)
-                Text("Tap Quick Note button to instantly create a numbered note", fontSize = 13.sp, color = MaterialTheme.colorScheme.outline)
+                Text("No notes yet", fontSize = 18.sp, color = MaterialTheme.colorScheme.outline)
+                Text("Tap + Quick Note to create one instantly", fontSize = 14.sp, color = MaterialTheme.colorScheme.outline)
             }
         }
     } else {
         LazyColumn(
             contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier.fillMaxSize()
         ) {
-            items(quickNotes, key = { "qn_${it.id}" }) { note ->
+            items(allNotes, key = { "notes_tab_${it.id}" }) { note ->
                 val wordCount = note.content.split("\\s+".toRegex()).count { it.isNotBlank() }
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { onOpenNote(note) },
-                    shape = RoundedCornerShape(10.dp)
+                    shape = RoundedCornerShape(12.dp)
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         Row(
@@ -829,281 +783,6 @@ private fun NotesTabContent(
                             overflow = TextOverflow.Ellipsis,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun MainStatisticsTabContent(
-    allBooks: List<Book>,
-    allNotes: List<Note>,
-    allFolders: List<Folder>
-) {
-    var subTab by remember { mutableIntStateOf(0) } // 0: Statistic, 1: Distribution / By File
-
-    Column(modifier = Modifier.fillMaxSize()) {
-        TabRow(selectedTabIndex = subTab) {
-            Tab(selected = subTab == 0, onClick = { subTab = 0 }, text = { Text("Statistic") })
-            Tab(selected = subTab == 1, onClick = { subTab = 1 }, text = { Text("Distribution / By File") })
-        }
-
-        when (subTab) {
-            0 -> StatisticsSubTab(allBooks = allBooks, allNotes = allNotes)
-            1 -> DistributionSubTab(allBooks = allBooks, allNotes = allNotes, allFolders = allFolders)
-        }
-    }
-}
-
-@Composable
-private fun StatisticsSubTab(
-    allBooks: List<Book>,
-    allNotes: List<Note>
-) {
-    val totalWords = remember(allNotes) {
-        allNotes.sumOf { n -> n.content.split("\\s+".toRegex()).count { it.isNotBlank() } }
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Text("Writing Statistics", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-
-        // Bold Side-by-Side Cards: Book Counts & File Counts
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Card(modifier = Modifier.weight(1f)) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text("${allBooks.size}", fontSize = 32.sp, fontWeight = FontWeight.ExtraBold)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("Book Counts", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.outline)
-                }
-            }
-            Card(modifier = Modifier.weight(1f)) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text("${allNotes.size}", fontSize = 32.sp, fontWeight = FontWeight.ExtraBold)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("File Counts", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.outline)
-                }
-            }
-            Card(modifier = Modifier.weight(1f)) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text("$totalWords", fontSize = 32.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("Total Words", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.outline)
-                }
-            }
-        }
-
-        Text("7-Day Word Count Graph", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-
-        // 7-Day Word Count Chart
-        val weekDays = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
-        val sampleWordCounts = listOf(450, 680, 320, 1100, 850, 1400, 920)
-        val maxVal = (sampleWordCounts.maxOrNull() ?: 1).toFloat()
-
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-                    .height(160.dp),
-                horizontalArrangement = Arrangement.SpaceAround,
-                verticalAlignment = Alignment.Bottom
-            ) {
-                weekDays.forEachIndexed { i, day ->
-                    val count = sampleWordCounts[i]
-                    val ratio = count / maxVal
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.fillMaxHeight(),
-                        verticalArrangement = Arrangement.Bottom
-                    ) {
-                        Text("$count", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Box(
-                            modifier = Modifier
-                                .width(22.dp)
-                                .fillMaxHeight(ratio * 0.75f)
-                                .clip(RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp))
-                                .background(MaterialTheme.colorScheme.primary)
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(day, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DistributionSubTab(
-    allBooks: List<Book>,
-    allNotes: List<Note>,
-    allFolders: List<Folder>
-) {
-    var selectedCategory by remember { mutableIntStateOf(0) } // 0: Files, 1: Folders, 2: Books
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            FilterChip(
-                selected = selectedCategory == 0,
-                onClick = { selectedCategory = 0 },
-                label = { Text("Files") }
-            )
-            FilterChip(
-                selected = selectedCategory == 1,
-                onClick = { selectedCategory = 1 },
-                label = { Text("Folders") }
-            )
-            FilterChip(
-                selected = selectedCategory == 2,
-                onClick = { selectedCategory = 2 },
-                label = { Text("Books") }
-            )
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        when (selectedCategory) {
-            0 -> {
-                val scoredNotes = remember(allNotes) {
-                    allNotes.map { n ->
-                        val count = n.content.split("\\s+".toRegex()).count { it.isNotBlank() }
-                        n to count
-                    }.sortedByDescending { it.second }
-                }
-                val maxWords = (scoredNotes.firstOrNull()?.second ?: 1).coerceAtLeast(1).toFloat()
-
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(scoredNotes, key = { "dist_note_${it.first.id}" }) { (note, count) ->
-                        val bookTitle = allBooks.firstOrNull { it.id == note.bookId }?.title ?: "Vault"
-                        val ratio = (count / maxWords).coerceIn(0.05f, 1.0f)
-                        Card(modifier = Modifier.fillMaxWidth()) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(note.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                    Text("$count words", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
-                                }
-                                Text(
-                                    text = "$bookTitle / ${note.folderPath}",
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.outline
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                LinearProgressIndicator(
-                                    progress = { ratio },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(8.dp)
-                                        .clip(CircleShape)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-            1 -> {
-                val folderStats = remember(allFolders, allNotes) {
-                    val map = mutableMapOf<String, Int>()
-                    for (f in allFolders) {
-                        val notesInFolder = allNotes.filter { it.bookId == f.bookId && it.folderPath == f.path }
-                        val words = notesInFolder.sumOf { n -> n.content.split("\\s+".toRegex()).count { it.isNotBlank() } }
-                        map["${f.bookId}_${f.path}"] = words
-                    }
-                    allFolders.map { f -> f to (map["${f.bookId}_${f.path}"] ?: 0) }.sortedByDescending { it.second }
-                }
-                val maxFolderWords = (folderStats.firstOrNull()?.second ?: 1).coerceAtLeast(1).toFloat()
-
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(folderStats, key = { "dist_folder_${it.first.bookId}_${it.first.path}" }) { (folder, count) ->
-                        val bookTitle = allBooks.firstOrNull { it.id == folder.bookId }?.title ?: "Vault"
-                        val ratio = (count / maxFolderWords).coerceIn(0.05f, 1.0f)
-                        Card(modifier = Modifier.fillMaxWidth()) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text("Folder: ${folder.path}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                    Text("$count words", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
-                                }
-                                Text(text = "Book: $bookTitle", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
-                                Spacer(modifier = Modifier.height(6.dp))
-                                LinearProgressIndicator(
-                                    progress = { ratio },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(8.dp)
-                                        .clip(CircleShape)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-            2 -> {
-                val bookStats = remember(allBooks, allNotes) {
-                    allBooks.map { b ->
-                        val words = allNotes.filter { it.bookId == b.id }.sumOf { n -> n.content.split("\\s+".toRegex()).count { it.isNotBlank() } }
-                        b to words
-                    }.sortedByDescending { it.second }
-                }
-                val maxBookWords = (bookStats.firstOrNull()?.second ?: 1).coerceAtLeast(1).toFloat()
-
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(bookStats, key = { "dist_book_${it.first.id}" }) { (book, count) ->
-                        val ratio = (count / maxBookWords).coerceIn(0.05f, 1.0f)
-                        Card(modifier = Modifier.fillMaxWidth()) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(book.title, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                                    Text("$count words", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
-                                }
-                                Spacer(modifier = Modifier.height(6.dp))
-                                LinearProgressIndicator(
-                                    progress = { ratio },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(8.dp)
-                                        .clip(CircleShape)
-                                )
-                            }
-                        }
                     }
                 }
             }

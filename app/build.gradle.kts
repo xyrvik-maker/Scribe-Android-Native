@@ -81,6 +81,8 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("com.google.accompanist:accompanist-systemuicontroller:0.34.0")
     implementation("androidx.compose.ui:ui-text-google-fonts:1.7.0")
+    implementation("com.patrykandpatrick.vico:compose:2.0.0")
+    implementation("com.patrykandpatrick.vico:compose-m3:2.0.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 

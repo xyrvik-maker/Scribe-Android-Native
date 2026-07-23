@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -17,6 +18,8 @@ class ThemeDataStoreRepo(private val context: Context) {
     companion object {
         val KEY_ACTIVE_THEME = stringPreferencesKey("active_theme_id")
         val KEY_CUSTOM_THEMES_JSON = stringPreferencesKey("custom_themes_json")
+        val KEY_GRID_COLUMNS = intPreferencesKey("grid_columns")
+        val KEY_DAILY_GOAL = intPreferencesKey("daily_goal")
 
         fun bgUriKey(themeId: String) = stringPreferencesKey("bg_uri_$themeId")
         fun bgOpacityKey(themeId: String) = floatPreferencesKey("bg_opacity_$themeId")
@@ -30,6 +33,14 @@ class ThemeDataStoreRepo(private val context: Context) {
         prefs[KEY_CUSTOM_THEMES_JSON] ?: "[]"
     }
 
+    val gridColumnsFlow: Flow<Int> = context.themeDataStore.data.map { prefs ->
+        prefs[KEY_GRID_COLUMNS] ?: 2
+    }
+
+    val dailyGoalFlow: Flow<Int> = context.themeDataStore.data.map { prefs ->
+        prefs[KEY_DAILY_GOAL] ?: 500
+    }
+
     suspend fun setActiveThemeId(themeId: String) {
         context.themeDataStore.edit { prefs ->
             prefs[KEY_ACTIVE_THEME] = themeId
@@ -39,6 +50,18 @@ class ThemeDataStoreRepo(private val context: Context) {
     suspend fun setCustomThemesJson(json: String) {
         context.themeDataStore.edit { prefs ->
             prefs[KEY_CUSTOM_THEMES_JSON] = json
+        }
+    }
+
+    suspend fun setGridColumns(cols: Int) {
+        context.themeDataStore.edit { prefs ->
+            prefs[KEY_GRID_COLUMNS] = cols
+        }
+    }
+
+    suspend fun setDailyGoal(goal: Int) {
+        context.themeDataStore.edit { prefs ->
+            prefs[KEY_DAILY_GOAL] = maxOf(50, goal)
         }
     }
 
