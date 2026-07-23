@@ -655,15 +655,20 @@ private fun StatsTabContent(allBooks: List<Book>) {
     val context = LocalContext.current
     var totalNotes by remember { mutableIntStateOf(0) }
     var totalWords by remember { mutableIntStateOf(0) }
+    var topNotes by remember { mutableStateOf<List<Pair<Note, Int>>>(emptyList()) }
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             val db = (context.applicationContext as ScribeApp).database
             val notes = db.noteDao().getAll()
             totalNotes = notes.size
-            totalWords = notes.sumOf { n ->
-                n.content.split("\\s+".toRegex()).count { it.isNotBlank() }
-            }
+            val scored = notes.map { n ->
+                val count = n.content.split("\\s+".toRegex()).count { it.isNotBlank() }
+                n to count
+            }.sortedByDescending { it.second }
+
+            totalWords = scored.sumOf { it.second }
+            topNotes = scored.take(5)
         }
     }
 
@@ -737,6 +742,38 @@ private fun StatsTabContent(allBooks: List<Book>) {
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(day, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+        }
+
+        if (topNotes.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(24.dp))
+            Text("Top Notes by Word Count", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(12.dp))
+
+            val maxWords = (topNotes.firstOrNull()?.second ?: 1).toFloat()
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    topNotes.forEach { (note, count) ->
+                        val ratio = (count / maxWords).coerceIn(0.05f, 1.0f)
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(note.name, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                Text("$count words", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            LinearProgressIndicator(
+                                progress = { ratio },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(8.dp)
+                                    .clip(CircleShape)
+                            )
+                        }
                     }
                 }
             }

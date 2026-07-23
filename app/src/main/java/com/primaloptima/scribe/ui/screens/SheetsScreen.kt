@@ -1,22 +1,37 @@
 package com.primaloptima.scribe.ui.screens
 
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.primaloptima.scribe.data.WorldEntry
@@ -28,13 +43,27 @@ fun SheetsScreen(
     vm: SheetsViewModel,
     onBack: () -> Unit
 ) {
-    var selectedTab by remember { mutableIntStateOf(0) } // 0: Characters, 1: Locations
-    val characters by vm.characters.observeAsState(emptyList())
-    val locations by vm.locations.observeAsState(emptyList())
+    val context = LocalContext.current
+    val allEntries by vm.allEntries.observeAsState(emptyList())
+
+    val categories = listOf("All", "character", "location", "faction", "item", "lore", "timeline")
+    var selectedCategory by remember { mutableStateOf("All") }
+    var searchQuery by remember { mutableStateOf("") }
 
     var showCreateDialog by remember { mutableStateOf(false) }
     var entryToEdit by remember { mutableStateOf<WorldEntry?>(null) }
     var entryToDelete by remember { mutableStateOf<WorldEntry?>(null) }
+
+    val filteredEntries = remember(allEntries, selectedCategory, searchQuery) {
+        allEntries.filter { entry ->
+            val matchesCategory = if (selectedCategory == "All") true else entry.type.equals(selectedCategory, ignoreCase = true)
+            val matchesQuery = if (searchQuery.isBlank()) true else {
+                entry.name.contains(searchQuery, ignoreCase = true) ||
+                entry.summary.contains(searchQuery, ignoreCase = true)
+            }
+            matchesCategory && matchesQuery
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -42,7 +71,7 @@ fun SheetsScreen(
                 title = { Text("World Building Sheets", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
@@ -58,24 +87,53 @@ fun SheetsScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            TabRow(selectedTabIndex = selectedTab) {
-                Tab(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    text = { Text("Characters (${characters.size})") }
-                )
-                Tab(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    text = { Text("Locations (${locations.size})") }
-                )
+            // Search Bar
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text("Search entries...") },
+                singleLine = true,
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(Icons.Default.Clear, contentDescription = "Clear")
+                        }
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            )
+
+            // Category Filter Chips
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(categories) { cat ->
+                    FilterChip(
+                        selected = selectedCategory == cat,
+                        onClick = { selectedCategory = cat },
+                        label = {
+                            Text(
+                                if (cat == "All") "All"
+                                else cat.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+                            )
+                        }
+                    )
+                }
             }
 
-            val currentList = if (selectedTab == 0) characters else locations
+            Spacer(modifier = Modifier.height(8.dp))
 
-            if (currentList.isEmpty()) {
+            if (filteredEntries.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No ${if (selectedTab == 0) "characters" else "locations"} yet. Tap + to add.", color = MaterialTheme.colorScheme.outline)
+                    Text(
+                        if (searchQuery.isNotBlank()) "No entries matching \"$searchQuery\""
+                        else "No sheets in this category. Tap + to create one.",
+                        color = MaterialTheme.colorScheme.outline
+                    )
                 }
             } else {
                 LazyColumn(
@@ -83,7 +141,7 @@ fun SheetsScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    items(currentList, key = { it.id }) { entry ->
+                    items(filteredEntries, key = { it.id }) { entry ->
                         WorldEntryCard(
                             entry = entry,
                             onClick = { entryToEdit = entry },
@@ -98,22 +156,36 @@ fun SheetsScreen(
 
     if (showCreateDialog) {
         var name by remember { mutableStateOf("") }
+        var type by remember { mutableStateOf(if (selectedCategory == "All") "character" else selectedCategory) }
+
         AlertDialog(
             onDismissRequest = { showCreateDialog = false },
-            title = { Text(if (selectedTab == 0) "New Character" else "New Location") },
+            title = { Text("New World Sheet") },
             text = {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Name") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("Name / Title") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Text("Category", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(listOf("character", "location", "faction", "item", "lore", "timeline")) { cat ->
+                            FilterChip(
+                                selected = type == cat,
+                                onClick = { type = cat },
+                                label = { Text(cat.replaceFirstChar { it.titlecase() }) }
+                            )
+                        }
+                    }
+                }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        val type = if (selectedTab == 0) "character" else "location"
                         vm.createEntry(type, name) { created ->
                             showCreateDialog = false
                             entryToEdit = created
@@ -179,17 +251,63 @@ private fun WorldEntryCard(
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                if (entry.type == "character") Icons.Default.Person else Icons.Default.Place,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(28.dp)
-            )
+            // Avatar Thumbnail or Icon
+            if (!entry.imageUri.isNullOrEmpty()) {
+                AsyncImage(
+                    model = entry.imageUri,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clip(CircleShape)
+                        .border(1.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        when (entry.type.lowercase()) {
+                            "character" -> Icons.Default.Person
+                            "location" -> Icons.Default.Place
+                            "faction" -> Icons.Default.Group
+                            "item" -> Icons.Default.Category
+                            "lore" -> Icons.Default.MenuBook
+                            else -> Icons.Default.Description
+                        },
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            }
+
             Spacer(modifier = Modifier.width(16.dp))
+
             Column(modifier = Modifier.weight(1f)) {
                 Text(entry.name, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                Text(entry.type.capitalize(), fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                Text(
+                    entry.type.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() },
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold
+                )
+                if (entry.summary.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        entry.summary,
+                        fontSize = 13.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
+
             Box {
                 IconButton(onClick = { showMenu = true }) {
                     Icon(Icons.Default.MoreVert, contentDescription = null)
@@ -214,14 +332,22 @@ private fun EditWorldEntryDialog(
     val fieldsType = object : TypeToken<List<SheetsViewModel.Companion.Field>>() {}.type
     val initialFields: List<SheetsViewModel.Companion.Field> = remember(entry) {
         try {
-            gson.fromJson(entry.fieldsJson, fieldsType)
+            gson.fromJson(entry.fieldsJson, fieldsType) ?: emptyList()
         } catch (_: Exception) {
             emptyList()
         }
     }
 
     var name by remember { mutableStateOf(entry.name) }
+    var summary by remember { mutableStateOf(entry.summary) }
+    var imageUri by remember { mutableStateOf(entry.imageUri) }
     var fields by remember { mutableStateOf(initialFields) }
+
+    val imagePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { imageUri = it.toString() }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -230,27 +356,106 @@ private fun EditWorldEntryDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 400.dp)
+                    .heightIn(max = 440.dp)
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                // Image Picker Row
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    if (!imageUri.isNullOrEmpty()) {
+                        AsyncImage(
+                            model = imageUri,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(60.dp)
+                                .clip(CircleShape)
+                        )
+                    }
+                    Column {
+                        OutlinedButton(onClick = { imagePicker.launch("image/*") }) {
+                            Icon(Icons.Default.Image, contentDescription = null)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(if (imageUri.isNullOrEmpty()) "Pick Photo" else "Change Photo")
+                        }
+                        if (!imageUri.isNullOrEmpty()) {
+                            TextButton(onClick = { imageUri = null }) {
+                                Text("Remove", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text("Name") },
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                OutlinedTextField(
+                    value = summary,
+                    onValueChange = { summary = it },
+                    label = { Text("Summary / Overview") },
+                    maxLines = 3,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                HorizontalDivider()
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Attributes & Details", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    IconButton(onClick = {
+                        fields = fields + SheetsViewModel.Companion.Field("New Attribute", "")
+                    }) {
+                        Icon(Icons.Default.Add, contentDescription = "Add Attribute")
+                    }
+                }
+
                 fields.forEachIndexed { index, field ->
-                    OutlinedTextField(
-                        value = field.value,
-                        onValueChange = { newVal ->
-                            val updatedList = fields.toMutableList()
-                            updatedList[index] = field.copy(value = newVal)
-                            fields = updatedList
-                        },
-                        label = { Text(field.label) },
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            OutlinedTextField(
+                                value = field.label,
+                                onValueChange = { newLabel ->
+                                    val list = fields.toMutableList()
+                                    list[index] = field.copy(label = newLabel)
+                                    fields = list
+                                },
+                                label = { Text("Label") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            OutlinedTextField(
+                                value = field.value,
+                                onValueChange = { newVal ->
+                                    val list = fields.toMutableList()
+                                    list[index] = field.copy(value = newVal)
+                                    fields = list
+                                },
+                                label = { Text("Value") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        IconButton(onClick = {
+                            val list = fields.toMutableList()
+                            list.removeAt(index)
+                            fields = list
+                        }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
+                        }
+                    }
                 }
             }
         },
@@ -258,7 +463,14 @@ private fun EditWorldEntryDialog(
             TextButton(
                 onClick = {
                     val updatedJson = gson.toJson(fields)
-                    onSave(entry.copy(name = name, fieldsJson = updatedJson))
+                    onSave(
+                        entry.copy(
+                            name = name,
+                            summary = summary,
+                            imageUri = imageUri,
+                            fieldsJson = updatedJson
+                        )
+                    )
                 }
             ) { Text("Save") }
         },

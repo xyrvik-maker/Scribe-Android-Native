@@ -1,6 +1,9 @@
 package com.primaloptima.scribe.ui.screens
 
+import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -8,8 +11,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
@@ -17,10 +21,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.primaloptima.scribe.ui.theme.parseComposeColor
 import com.primaloptima.scribe.util.DefaultThemes
 import com.primaloptima.scribe.util.model.AppTheme
@@ -48,6 +54,16 @@ fun ThemeEditScreen(
     var accentHex by remember(originalTheme) { mutableStateOf(originalTheme.colors.accent) }
     var fontSize by remember(originalTheme) { mutableFloatStateOf(originalTheme.fontSize.toFloat()) }
     var lineHeight by remember(originalTheme) { mutableFloatStateOf(originalTheme.lineHeight) }
+    var bgUri by remember(originalTheme) { mutableStateOf(originalTheme.backgroundImageUri) }
+    var bgOpacity by remember(originalTheme) { mutableFloatStateOf(originalTheme.backgroundImageOpacity ?: 0.35f) }
+
+    val bgImagePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            bgUri = it.toString()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -55,7 +71,7 @@ fun ThemeEditScreen(
                 title = { Text("Edit Theme", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
@@ -64,6 +80,8 @@ fun ThemeEditScreen(
                             name = name,
                             fontSize = fontSize.toInt(),
                             lineHeight = lineHeight,
+                            backgroundImageUri = bgUri,
+                            backgroundImageOpacity = bgOpacity,
                             colors = originalTheme.colors.copy(
                                 background = bgHex,
                                 surface = surfaceHex,
@@ -98,35 +116,82 @@ fun ThemeEditScreen(
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(120.dp),
+                    .height(140.dp),
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(previewBg)
-                        .padding(16.dp),
-                    contentAlignment = Alignment.Center
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            "The quick brown fox jumps over the lazy dog.",
-                            color = previewText,
-                            fontSize = fontSize.sp,
-                            fontWeight = FontWeight.Medium
+                    if (!bgUri.isNullOrEmpty()) {
+                        AsyncImage(
+                            model = bgUri,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            alpha = bgOpacity,
+                            modifier = Modifier.fillMaxSize()
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            "Accent Highlight",
-                            color = previewAccent,
-                            fontSize = (fontSize - 2).sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                "The quick brown fox jumps over the lazy dog.",
+                                color = previewText,
+                                fontSize = fontSize.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                "Accent Highlight",
+                                color = previewAccent,
+                                fontSize = (fontSize - 2).sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
             }
 
-            Divider()
+            HorizontalDivider()
+
+            Text("Background Image & Opacity", fontWeight = FontWeight.Bold)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                OutlinedButton(
+                    onClick = { bgImagePicker.launch("image/*") }
+                ) {
+                    Icon(Icons.Default.Image, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(if (bgUri.isNullOrEmpty()) "Pick Background Image" else "Change Image")
+                }
+
+                if (!bgUri.isNullOrEmpty()) {
+                    TextButton(onClick = { bgUri = null }) {
+                        Text("Remove Image", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+
+            if (!bgUri.isNullOrEmpty()) {
+                Text("Image Opacity: ${(bgOpacity * 100).toInt()}%")
+                Slider(
+                    value = bgOpacity,
+                    onValueChange = { bgOpacity = it },
+                    valueRange = 0.05f..1.0f
+                )
+            }
+
+            HorizontalDivider()
 
             Text("Properties", fontWeight = FontWeight.Bold)
 

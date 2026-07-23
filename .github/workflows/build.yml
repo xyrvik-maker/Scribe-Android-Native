@@ -21,10 +21,11 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # ── Stable debug keystore ──────────────────────────────────────────────
-      # Fixed cache key means every build reuses the same keystore → same APK
-      # signature → install-over-update works without uninstalling.
-      # Bump v1→v2 only to intentionally rotate the signing key.
+      # ── Stable debug keystore ───────────────────────────────────────────────
+      # The cache key is fixed (scribe-debug-keystore-v1) so every build after
+      # the first one reuses the exact same .jks file and therefore the exact
+      # same APK signature.  Install-over-update works without uninstalling.
+      # To intentionally rotate the key (e.g. after a security event) bump v1→v2.
       - name: Restore debug keystore from cache
         id: ks-cache
         uses: actions/cache@v4
@@ -47,14 +48,19 @@ jobs:
             -validity 10000
           echo "New debug keystore created and cached."
 
-      # ── Gradle ────────────────────────────────────────────────────────────
-      # setup-gradle installs Gradle 8.10.2 as a binary on PATH.
-      # We call `gradle` directly to avoid the wrapper jar entirely.
+      # ── Build ───────────────────────────────────────────────────────────────
+      # validate-wrappers: false because this workflow calls the installed
+      # `gradle` binary directly (not ./gradlew), so the wrapper JAR is never
+      # used at runtime.  Validating it would just block builds when the JAR
+      # hash isn't in GitHub's allowlist yet.
       - name: Setup Gradle 8.10.2
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
           validate-wrappers: false
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew 2>/dev/null || true
 
       - name: Build release APK
         run: gradle app:assembleRelease --no-daemon

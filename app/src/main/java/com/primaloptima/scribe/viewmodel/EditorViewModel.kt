@@ -39,6 +39,57 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private val _outline = MutableLiveData<List<OutlineEntry>>(emptyList())
     val outline: LiveData<List<OutlineEntry>> = _outline
 
+    // ── Floating Windows & Pinned Slots ────────────────────────────────────────
+
+    private val _floatingWindows = MutableLiveData<List<com.primaloptima.scribe.util.model.FloatingWindow>>(emptyList())
+    val floatingWindows: LiveData<List<com.primaloptima.scribe.util.model.FloatingWindow>> = _floatingWindows
+
+    private val _pinnedTopNoteId = MutableLiveData<String?>(null)
+    val pinnedTopNoteId: LiveData<String?> = _pinnedTopNoteId
+
+    private val _pinnedBottomNoteId = MutableLiveData<String?>(null)
+    val pinnedBottomNoteId: LiveData<String?> = _pinnedBottomNoteId
+
+    fun setPinnedTop(noteId: String?) { _pinnedTopNoteId.value = noteId }
+    fun setPinnedBottom(noteId: String?) { _pinnedBottomNoteId.value = noteId }
+
+    fun openFloatingWindow(noteId: String) {
+        val current = _floatingWindows.value.orEmpty().toMutableList()
+        if (current.none { it.noteId == noteId }) {
+            current.add(
+                com.primaloptima.scribe.util.model.FloatingWindow(
+                    id = System.currentTimeMillis().toString(),
+                    noteId = noteId,
+                    x = 80f,
+                    y = 120f,
+                    width = 280,
+                    height = 200,
+                    zOrder = current.size
+                )
+            )
+            _floatingWindows.value = current
+        }
+    }
+
+    fun closeFloatingWindow(windowId: String) {
+        val current = _floatingWindows.value.orEmpty().filter { it.id != windowId }
+        _floatingWindows.value = current
+    }
+
+    fun toggleCollapseFloatingWindow(windowId: String) {
+        val current = _floatingWindows.value.orEmpty().map {
+            if (it.id == windowId) it.copy(collapsed = !it.collapsed) else it
+        }
+        _floatingWindows.value = current
+    }
+
+    fun moveFloatingWindow(windowId: String, x: Float, y: Float) {
+        val current = _floatingWindows.value.orEmpty().map {
+            if (it.id == windowId) it.copy(x = x, y = y) else it
+        }
+        _floatingWindows.value = current
+    }
+
     // ── Theme ─────────────────────────────────────────────────────────────────
 
     private val _theme = MutableLiveData<AppTheme>()

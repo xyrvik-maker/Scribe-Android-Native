@@ -14,6 +14,9 @@ class SheetsViewModel(application: Application) : AndroidViewModel(application) 
 
     private val db = (application as ScribeApp).database
 
+    val allEntries: LiveData<List<WorldEntry>> =
+        db.worldEntryDao().observeAll().asLiveData()
+
     val characters: LiveData<List<WorldEntry>> =
         db.worldEntryDao().observeByType("character").asLiveData()
 
