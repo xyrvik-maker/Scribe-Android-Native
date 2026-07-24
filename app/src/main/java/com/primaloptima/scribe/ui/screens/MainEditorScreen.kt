@@ -35,12 +35,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.PointerInputChange
-import androidx.compose.ui.input.pointer.awaitEachGesture
-import androidx.compose.ui.input.pointer.awaitFirstDown
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
-import kotlin.math.abs
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.SpanStyle
@@ -182,32 +178,25 @@ fun MainEditorScreen(
     }
 
     val swipeGestureModifier = Modifier.pointerInput(leftDrawerState, rightDrawerState) {
-        awaitEachGesture {
-            val down = awaitFirstDown(pass = PointerEventPass.Initial)
-            var change: PointerInputChange? = down
-
-            while (true) {
-                val event = awaitPointerEvent(pass = PointerEventPass.Initial)
-                val dragChange = event.changes.firstOrNull { it.id == down.id }
-                if (dragChange == null || !dragChange.pressed) break
-
-                val totalDragX = dragChange.position.x - down.position.x
-                val totalDragY = dragChange.position.y - down.position.y
-
-                if (abs(totalDragX) > 36.dp.toPx() && abs(totalDragY) < abs(totalDragX) * 0.8f) {
-                    if (totalDragX > 0 && leftDrawerState.isClosed && down.position.x < size.width * 0.5f) {
-                        scope.launch { leftDrawerState.open() }
-                        dragChange.consume()
-                        break
-                    } else if (totalDragX < 0 && rightDrawerState.isClosed && down.position.x > size.width * 0.5f) {
-                        scope.launch { rightDrawerState.open() }
-                        dragChange.consume()
-                        break
-                    }
+        var startX = 0f
+        var totalX = 0f
+        detectHorizontalDragGestures(
+            onDragStart = { offset ->
+                startX = offset.x
+                totalX = 0f
+            },
+            onHorizontalDrag = { change, dragAmount ->
+                totalX += dragAmount
+                val threshold = 36.dp.toPx()
+                if (totalX > threshold && leftDrawerState.isClosed && startX < size.width * 0.5f) {
+                    change.consume()
+                    scope.launch { leftDrawerState.open() }
+                } else if (totalX < -threshold && rightDrawerState.isClosed && startX > size.width * 0.5f) {
+                    change.consume()
+                    scope.launch { rightDrawerState.open() }
                 }
-                change = dragChange
             }
-        }
+        )
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
