@@ -120,7 +120,7 @@ fun BookScreen(
 
                 NavigationDrawerItem(
                     icon = { Icon(Icons.Default.Folder, contentDescription = null) },
-                    label = { Text("Root (/)") },
+                    label = { Text("Main") },
                     selected = selectedFolderPath == "/",
                     onClick = {
                         selectedFolderPath = "/"
@@ -129,7 +129,7 @@ fun BookScreen(
                     modifier = Modifier.padding(horizontal = 12.dp)
                 )
 
-                folders.forEach { folder ->
+                folders.filter { it.path != "/" }.forEach { folder ->
                     NavigationDrawerItem(
                         icon = { Icon(Icons.Default.FolderOpen, contentDescription = null) },
                         label = { Text(folder.path) },
@@ -340,7 +340,7 @@ fun BookScreen(
             ) {
                 if (selectedTab == 0) {
                     val allFolderPaths = remember(folders) {
-                        listOf("/") + folders.map { it.path }
+                        (listOf("/") + folders.map { it.path }).distinct()
                     }
 
                     if (viewMode == BookViewModel.ViewMode.LIST) {
@@ -357,7 +357,7 @@ fun BookScreen(
                                 edgePadding = 16.dp
                             ) {
                                 allFolderPaths.forEachIndexed { index, path ->
-                                    val label = if (path == "/") "Root (/)" else path.removePrefix("/")
+                                    val label = if (path == "/") "Main" else path.removePrefix("/")
                                     Tab(
                                         selected = pagerState.currentPage == index,
                                         onClick = {
@@ -388,8 +388,9 @@ fun BookScreen(
                                                 tint = MaterialTheme.colorScheme.outline
                                             )
                                             Spacer(modifier = Modifier.height(16.dp))
+                                            val displayPathName = if (currentPath == "/") "Main" else currentPath
                                             Text(
-                                                "No notes in $currentPath",
+                                                "No notes in $displayPathName",
                                                 fontSize = 16.sp,
                                                 color = MaterialTheme.colorScheme.outline
                                             )
@@ -593,7 +594,7 @@ private fun TreeModeView(
     val expandedFolders = remember { mutableStateMapOf<String, Boolean>() }
 
     val folderPaths = remember(folders) {
-        folders.map { it.path }.sorted()
+        folders.map { it.path }.filter { it != "/" }.sorted()
     }
 
     LazyColumn(

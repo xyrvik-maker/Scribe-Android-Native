@@ -312,18 +312,44 @@ fun MainEditorScreen(
                                                 )
                                             }
 
+                                            var showFolderPinSubMenu by remember { mutableStateOf(false) }
                                             DropdownMenu(
                                                 expanded = showFolderMenu,
-                                                onDismissRequest = { showFolderMenu = false }
+                                                onDismissRequest = {
+                                                    showFolderMenu = false
+                                                    showFolderPinSubMenu = false
+                                                }
                                             ) {
-                                                DropdownMenuItem(
-                                                    text = { Text("Pin First Note to Right Panel") },
-                                                    onClick = {
-                                                        showFolderMenu = false
-                                                        notesInFolder.firstOrNull()?.let { editorVm.addPinnedTop(it.id) }
-                                                        scope.launch { leftDrawerState.close() }
-                                                    }
-                                                )
+                                                if (!showFolderPinSubMenu) {
+                                                    DropdownMenuItem(
+                                                        text = { Text("Pin") },
+                                                        onClick = { showFolderPinSubMenu = true }
+                                                    )
+                                                } else {
+                                                    DropdownMenuItem(
+                                                        text = { Text("‹ Back") },
+                                                        onClick = { showFolderPinSubMenu = false }
+                                                    )
+                                                    HorizontalDivider()
+                                                    DropdownMenuItem(
+                                                        text = { Text("Pin First Note to Top") },
+                                                        onClick = {
+                                                            showFolderMenu = false
+                                                            showFolderPinSubMenu = false
+                                                            notesInFolder.firstOrNull()?.let { editorVm.addPinnedTop(it.id) }
+                                                            scope.launch { leftDrawerState.close() }
+                                                        }
+                                                    )
+                                                    DropdownMenuItem(
+                                                        text = { Text("Pin First Note to Bottom") },
+                                                        onClick = {
+                                                            showFolderMenu = false
+                                                            showFolderPinSubMenu = false
+                                                            notesInFolder.firstOrNull()?.let { editorVm.addPinnedBottom(it.id) }
+                                                            scope.launch { leftDrawerState.close() }
+                                                        }
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -381,33 +407,59 @@ fun MainEditorScreen(
                                                     }
                                                 }
 
+                                                var showPinSubMenu by remember { mutableStateOf(false) }
                                                 DropdownMenu(
                                                     expanded = showMenu,
-                                                    onDismissRequest = { showMenu = false }
+                                                    onDismissRequest = {
+                                                        showMenu = false
+                                                        showPinSubMenu = false
+                                                    }
                                                 ) {
-                                                    DropdownMenuItem(
-                                                        text = { Text("Pin to Right Panel") },
-                                                        onClick = {
-                                                            showMenu = false
-                                                            editorVm.addPinnedTop(note.id)
-                                                            scope.launch { leftDrawerState.close() }
-                                                        }
-                                                    )
-                                                    DropdownMenuItem(
-                                                        text = { Text("Open as Floating Window") },
-                                                        onClick = {
-                                                            showMenu = false
-                                                            editorVm.openFloatingWindow(note.id)
-                                                            scope.launch { leftDrawerState.close() }
-                                                        }
-                                                    )
-                                                    DropdownMenuItem(
-                                                        text = { Text("Delete") },
-                                                        onClick = {
-                                                            showMenu = false
-                                                            bookVm.deleteNote(note.id)
-                                                        }
-                                                    )
+                                                    if (!showPinSubMenu) {
+                                                        DropdownMenuItem(
+                                                            text = { Text("Pin") },
+                                                            onClick = { showPinSubMenu = true }
+                                                        )
+                                                        DropdownMenuItem(
+                                                            text = { Text("Open as Floating Window") },
+                                                            onClick = {
+                                                                showMenu = false
+                                                                editorVm.openFloatingWindow(note.id)
+                                                                scope.launch { leftDrawerState.close() }
+                                                            }
+                                                        )
+                                                        DropdownMenuItem(
+                                                            text = { Text("Delete") },
+                                                            onClick = {
+                                                                showMenu = false
+                                                                bookVm.deleteNote(note.id)
+                                                            }
+                                                        )
+                                                    } else {
+                                                        DropdownMenuItem(
+                                                            text = { Text("‹ Back") },
+                                                            onClick = { showPinSubMenu = false }
+                                                        )
+                                                        HorizontalDivider()
+                                                        DropdownMenuItem(
+                                                            text = { Text("Pin to Top") },
+                                                            onClick = {
+                                                                showMenu = false
+                                                                showPinSubMenu = false
+                                                                editorVm.addPinnedTop(note.id)
+                                                                scope.launch { leftDrawerState.close() }
+                                                            }
+                                                        )
+                                                        DropdownMenuItem(
+                                                            text = { Text("Pin to Bottom") },
+                                                            onClick = {
+                                                                showMenu = false
+                                                                showPinSubMenu = false
+                                                                editorVm.addPinnedBottom(note.id)
+                                                                scope.launch { leftDrawerState.close() }
+                                                            }
+                                                        )
+                                                    }
                                                 }
                                             }
                                         }
@@ -472,26 +524,52 @@ fun MainEditorScreen(
                                                 }
                                             }
 
+                                            var showPinSubMenu by remember { mutableStateOf(false) }
                                             DropdownMenu(
                                                 expanded = showMenu,
-                                                onDismissRequest = { showMenu = false }
+                                                onDismissRequest = {
+                                                    showMenu = false
+                                                    showPinSubMenu = false
+                                                }
                                             ) {
-                                                DropdownMenuItem(
-                                                    text = { Text("Pin to Right Panel") },
-                                                    onClick = {
-                                                        showMenu = false
-                                                        editorVm.addPinnedTop(entry.id)
-                                                        scope.launch { leftDrawerState.close() }
-                                                    }
-                                                )
-                                                DropdownMenuItem(
-                                                    text = { Text("Open as Floating Window") },
-                                                    onClick = {
-                                                        showMenu = false
-                                                        editorVm.openFloatingWindow(entry.id)
-                                                        scope.launch { leftDrawerState.close() }
-                                                    }
-                                                )
+                                                if (!showPinSubMenu) {
+                                                    DropdownMenuItem(
+                                                        text = { Text("Pin") },
+                                                        onClick = { showPinSubMenu = true }
+                                                    )
+                                                    DropdownMenuItem(
+                                                        text = { Text("Open as Floating Window") },
+                                                        onClick = {
+                                                            showMenu = false
+                                                            editorVm.openFloatingWindow(entry.id)
+                                                            scope.launch { leftDrawerState.close() }
+                                                        }
+                                                    )
+                                                } else {
+                                                    DropdownMenuItem(
+                                                        text = { Text("‹ Back") },
+                                                        onClick = { showPinSubMenu = false }
+                                                    )
+                                                    HorizontalDivider()
+                                                    DropdownMenuItem(
+                                                        text = { Text("Pin to Top") },
+                                                        onClick = {
+                                                            showMenu = false
+                                                            showPinSubMenu = false
+                                                            editorVm.addPinnedTop(entry.id)
+                                                            scope.launch { leftDrawerState.close() }
+                                                        }
+                                                    )
+                                                    DropdownMenuItem(
+                                                        text = { Text("Pin to Bottom") },
+                                                        onClick = {
+                                                            showMenu = false
+                                                            showPinSubMenu = false
+                                                            editorVm.addPinnedBottom(entry.id)
+                                                            scope.launch { leftDrawerState.close() }
+                                                        }
+                                                    )
+                                                }
                                             }
                                         }
                                     }
