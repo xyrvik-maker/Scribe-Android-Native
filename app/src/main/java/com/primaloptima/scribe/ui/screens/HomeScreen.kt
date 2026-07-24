@@ -4,6 +4,12 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerInputChange
+import androidx.compose.ui.input.pointer.awaitEachGesture
+import androidx.compose.ui.input.pointer.awaitFirstDown
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlin.math.abs
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -122,6 +128,31 @@ fun HomeScreen(
         bookToChangeCover = null
     }
 
+    val swipeGestureModifier = Modifier.pointerInput(drawerState) {
+        awaitEachGesture {
+            val down = awaitFirstDown(pass = PointerEventPass.Initial)
+            var change: PointerInputChange? = down
+
+            while (true) {
+                val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+                val dragChange = event.changes.firstOrNull { it.id == down.id }
+                if (dragChange == null || !dragChange.pressed) break
+
+                val totalDragX = dragChange.position.x - down.position.x
+                val totalDragY = dragChange.position.y - down.position.y
+
+                if (abs(totalDragX) > 36.dp.toPx() && abs(totalDragY) < abs(totalDragX) * 0.8f) {
+                    if (totalDragX > 0 && drawerState.isClosed && down.position.x < size.width * 0.5f) {
+                        scope.launch { drawerState.open() }
+                        dragChange.consume()
+                        break
+                    }
+                }
+                change = dragChange
+            }
+        }
+    }
+
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
@@ -181,6 +212,7 @@ fun HomeScreen(
         }
     ) {
         Scaffold(
+            modifier = Modifier.then(swipeGestureModifier),
             topBar = {
                 TopAppBar(
                     title = {

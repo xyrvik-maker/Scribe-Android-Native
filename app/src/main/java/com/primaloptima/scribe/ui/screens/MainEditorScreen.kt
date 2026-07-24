@@ -35,7 +35,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerInputChange
+import androidx.compose.ui.input.pointer.awaitEachGesture
+import androidx.compose.ui.input.pointer.awaitFirstDown
 import androidx.compose.ui.input.pointer.pointerInput
+import kotlin.math.abs
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.SpanStyle
@@ -174,6 +179,35 @@ fun MainEditorScreen(
         uri ?: return@rememberLauncherForActivityResult
         val name = uri.lastPathSegment?.substringAfterLast(':') ?: "External Folder"
         noteListVm.connectExternalFolder(uri, name)
+    }
+
+    val swipeGestureModifier = Modifier.pointerInput(leftDrawerState, rightDrawerState) {
+        awaitEachGesture {
+            val down = awaitFirstDown(pass = PointerEventPass.Initial)
+            var change: PointerInputChange? = down
+
+            while (true) {
+                val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+                val dragChange = event.changes.firstOrNull { it.id == down.id }
+                if (dragChange == null || !dragChange.pressed) break
+
+                val totalDragX = dragChange.position.x - down.position.x
+                val totalDragY = dragChange.position.y - down.position.y
+
+                if (abs(totalDragX) > 36.dp.toPx() && abs(totalDragY) < abs(totalDragX) * 0.8f) {
+                    if (totalDragX > 0 && leftDrawerState.isClosed && down.position.x < size.width * 0.5f) {
+                        scope.launch { leftDrawerState.open() }
+                        dragChange.consume()
+                        break
+                    } else if (totalDragX < 0 && rightDrawerState.isClosed && down.position.x > size.width * 0.5f) {
+                        scope.launch { rightDrawerState.open() }
+                        dragChange.consume()
+                        break
+                    }
+                }
+                change = dragChange
+            }
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -793,6 +827,7 @@ fun MainEditorScreen(
                 ) {
                     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                         Scaffold(
+                            modifier = Modifier.then(swipeGestureModifier),
                             topBar = {
                                 if (!zenMode) {
                                     Column {
@@ -803,6 +838,11 @@ fun MainEditorScreen(
                                                 actionIconContentColor = MaterialTheme.colorScheme.primary,
                                                 navigationIconContentColor = MaterialTheme.colorScheme.primary
                                             ),
+                                            navigationIcon = {
+                                                IconButton(onClick = { scope.launch { leftDrawerState.open() } }) {
+                                                    Icon(Icons.Default.Menu, contentDescription = "Vault Explorer")
+                                                }
+                                            },
                                             title = {
                                                 Text(
                                                     activeNote?.name ?: "Scribe Editor",
@@ -816,6 +856,9 @@ fun MainEditorScreen(
                                                 )
                                             },
                                             actions = {
+                                                IconButton(onClick = { scope.launch { rightDrawerState.open() } }) {
+                                                    Icon(Icons.Default.Dock, contentDescription = "Outline & Pinned Notes")
+                                                }
                                                 IconButton(onClick = { showFindBar = !showFindBar }) {
                                                     Icon(Icons.Default.Search, contentDescription = "Find")
                                                 }
