@@ -5,10 +5,14 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.*
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -20,6 +24,7 @@ import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -28,11 +33,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.primaloptima.scribe.MainActivity
 import com.primaloptima.scribe.ScribeApp
+import com.primaloptima.scribe.data.Folder
 import com.primaloptima.scribe.data.Note
 import com.primaloptima.scribe.util.CoverUtils
+import com.primaloptima.scribe.util.MarkdownUtil
 import com.primaloptima.scribe.viewmodel.BookViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,6 +61,9 @@ fun BookScreen(
 
     // Bottom Bar tab state inside BookScreen: 0: Write, 1: Statistics
     var selectedTab by remember { mutableIntStateOf(0) }
+
+    // FAB expanded state
+    var isFabExpanded by remember { mutableStateOf(false) }
 
     // Dialog states
     var showCreateNoteDialog by remember { mutableStateOf(false) }
@@ -143,10 +156,11 @@ fun BookScreen(
                         IconButton(onClick = { scope.launch { drawerState.open() } }) {
                             Icon(Icons.Default.Folder, contentDescription = "Folders")
                         }
+                        // Toggle between Tab Mode and Tree Mode
                         IconButton(onClick = { vm.toggleViewMode() }) {
                             Icon(
-                                if (viewMode == BookViewModel.ViewMode.LIST) Icons.Default.AccountTree else Icons.Default.List,
-                                contentDescription = "Toggle View"
+                                if (viewMode == BookViewModel.ViewMode.LIST) Icons.Default.ViewStream else Icons.Default.AccountTree,
+                                contentDescription = "Toggle Mode"
                             )
                         }
                         var showSortMenu by remember { mutableStateOf(false) }
@@ -208,8 +222,86 @@ fun BookScreen(
             },
             floatingActionButton = {
                 if (selectedTab == 0) {
-                    FloatingActionButton(onClick = { showCreateNoteDialog = true }) {
-                        Icon(Icons.Default.Add, contentDescription = "New Note")
+                    Column(
+                        horizontalAlignment = Alignment.End,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        AnimatedVisibility(
+                            visible = isFabExpanded,
+                            enter = fadeIn() + expandVertically(),
+                            exit = fadeOut() + shrinkVertically()
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.End,
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant,
+                                        tonalElevation = 4.dp
+                                    ) {
+                                        Text(
+                                            "Text",
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                    SmallFloatingActionButton(
+                                        onClick = {
+                                            isFabExpanded = false
+                                            showCreateNoteDialog = true
+                                        },
+                                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                                    ) {
+                                        Icon(Icons.Default.Description, contentDescription = "New Text File")
+                                    }
+                                }
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant,
+                                        tonalElevation = 4.dp
+                                    ) {
+                                        Text(
+                                            "Folder",
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                    SmallFloatingActionButton(
+                                        onClick = {
+                                            isFabExpanded = false
+                                            showCreateFolderDialog = true
+                                        },
+                                        containerColor = MaterialTheme.colorScheme.secondaryContainer
+                                    ) {
+                                        Icon(Icons.Default.CreateNewFolder, contentDescription = "New Folder")
+                                    }
+                                }
+                            }
+                        }
+
+                        val rotation by animateFloatAsState(targetValue = if (isFabExpanded) 45f else 0f)
+
+                        FloatingActionButton(
+                            onClick = { isFabExpanded = !isFabExpanded }
+                        ) {
+                            Icon(
+                                Icons.Default.Add,
+                                contentDescription = "New Item",
+                                modifier = Modifier.rotate(rotation)
+                            )
+                        }
                     }
                 }
             }
@@ -218,114 +310,127 @@ fun BookScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        if (isFabExpanded) isFabExpanded = false
+                    }
             ) {
                 if (selectedTab == 0) {
-                    val filteredNotes = notes.filter {
-                        if (selectedFolderPath == "/") true else it.folderPath == selectedFolderPath
+                    val allFolderPaths = remember(folders) {
+                        listOf("/") + folders.map { it.path }
                     }
 
-                    if (filteredNotes.isEmpty()) {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(
-                                    Icons.Outlined.Description,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(64.dp),
-                                    tint = MaterialTheme.colorScheme.outline
-                                )
-                                Spacer(modifier = Modifier.height(16.dp))
-                                Text("No notes in this folder", fontSize = 18.sp, color = MaterialTheme.colorScheme.outline)
-                                Text("Tap + to create a note", fontSize = 14.sp, color = MaterialTheme.colorScheme.outline)
-                            }
+                    if (viewMode == BookViewModel.ViewMode.LIST) {
+                        // TAB MODE using HorizontalPager & ScrollableTabRow
+                        val pagerState = rememberPagerState(pageCount = { allFolderPaths.size })
+
+                        LaunchedEffect(pagerState.currentPage) {
+                            selectedFolderPath = allFolderPaths[pagerState.currentPage]
                         }
-                    } else if (viewMode == BookViewModel.ViewMode.LIST) {
-                        LazyColumn(
-                            contentPadding = PaddingValues(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxSize()
-                        ) {
-                            items(filteredNotes, key = { it.id }) { note ->
-                                NoteListRow(
-                                    note = note,
-                                    onClick = {
-                                        context.startActivity(
-                                            Intent(context, MainActivity::class.java)
-                                                .putExtra(MainActivity.EXTRA_NOTE_ID, note.id)
-                                                .putExtra(MainActivity.EXTRA_BOOK_ID, vm.bookId)
-                                        )
-                                    },
-                                    onOpenFloat = {
-                                        context.startActivity(
-                                            Intent(context, MainActivity::class.java)
-                                                .putExtra(MainActivity.EXTRA_NOTE_ID, note.id)
-                                                .putExtra(MainActivity.EXTRA_BOOK_ID, vm.bookId)
-                                                .putExtra("openInFloat", true)
-                                        )
-                                    },
-                                    onRename = { noteToRename = note },
-                                    onDuplicate = { vm.duplicateNote(note.id) },
-                                    onDelete = { noteToDelete = note }
-                                )
+
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            ScrollableTabRow(
+                                selectedTabIndex = pagerState.currentPage,
+                                edgePadding = 16.dp
+                            ) {
+                                allFolderPaths.forEachIndexed { index, path ->
+                                    val label = if (path == "/") "Root (/)" else path.removePrefix("/")
+                                    Tab(
+                                        selected = pagerState.currentPage == index,
+                                        onClick = {
+                                            scope.launch { pagerState.animateScrollToPage(index) }
+                                        },
+                                        text = { Text(label, fontWeight = FontWeight.Bold) }
+                                    )
+                                }
                             }
-                        }
-                    } else {
-                        val treeItems = remember(notes, folders) { vm.buildTree() }
-                        LazyColumn(
-                            contentPadding = PaddingValues(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                            modifier = Modifier.fillMaxSize()
-                        ) {
-                            items(treeItems) { item ->
-                                when (item) {
-                                    is BookViewModel.TreeItem.FolderItem -> {
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(start = (item.depth * 16).dp, top = 8.dp, bottom = 4.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
+
+                            HorizontalPager(
+                                state = pagerState,
+                                modifier = Modifier.fillMaxSize()
+                            ) { page ->
+                                val currentPath = allFolderPaths[page]
+                                val pageNotes = notes.filter { it.folderPath == currentPath }
+
+                                if (pageNotes.isEmpty()) {
+                                    Box(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                             Icon(
-                                                Icons.Default.Folder,
+                                                Icons.Outlined.Description,
                                                 contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.size(20.dp)
+                                                modifier = Modifier.size(64.dp),
+                                                tint = MaterialTheme.colorScheme.outline
                                             )
-                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Spacer(modifier = Modifier.height(16.dp))
                                             Text(
-                                                item.folder.path,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.primary
+                                                "No notes in $currentPath",
+                                                fontSize = 16.sp,
+                                                color = MaterialTheme.colorScheme.outline
                                             )
                                         }
                                     }
-                                    is BookViewModel.TreeItem.NoteItem -> {
-                                        val note = item.note
-                                        NoteListRow(
-                                            note = note,
-                                            modifier = Modifier.padding(start = (item.depth * 16).dp),
-                                            onClick = {
-                                                context.startActivity(
-                                                    Intent(context, MainActivity::class.java)
-                                                        .putExtra(MainActivity.EXTRA_NOTE_ID, note.id)
-                                                        .putExtra(MainActivity.EXTRA_BOOK_ID, vm.bookId)
-                                                )
-                                            },
-                                            onOpenFloat = {
-                                                context.startActivity(
-                                                    Intent(context, MainActivity::class.java)
-                                                        .putExtra(MainActivity.EXTRA_NOTE_ID, note.id)
-                                                        .putExtra(MainActivity.EXTRA_BOOK_ID, vm.bookId)
-                                                        .putExtra("openInFloat", true)
-                                                )
-                                            },
-                                            onRename = { noteToRename = note },
-                                            onDuplicate = { vm.duplicateNote(note.id) },
-                                            onDelete = { noteToDelete = note }
-                                        )
+                                } else {
+                                    LazyColumn(
+                                        contentPadding = PaddingValues(12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                                        modifier = Modifier.fillMaxSize()
+                                    ) {
+                                        items(pageNotes, key = { it.id }) { note ->
+                                            NoteListRow(
+                                                note = note,
+                                                onClick = {
+                                                    context.startActivity(
+                                                        Intent(context, MainActivity::class.java)
+                                                            .putExtra(MainActivity.EXTRA_NOTE_ID, note.id)
+                                                            .putExtra(MainActivity.EXTRA_BOOK_ID, vm.bookId)
+                                                    )
+                                                },
+                                                onOpenFloat = {
+                                                    context.startActivity(
+                                                        Intent(context, MainActivity::class.java)
+                                                            .putExtra(MainActivity.EXTRA_NOTE_ID, note.id)
+                                                            .putExtra(MainActivity.EXTRA_BOOK_ID, vm.bookId)
+                                                            .putExtra("openInFloat", true)
+                                                    )
+                                                },
+                                                onRename = { noteToRename = note },
+                                                onDuplicate = { vm.duplicateNote(note.id) },
+                                                onDelete = { noteToDelete = note }
+                                            )
+                                        }
                                     }
                                 }
                             }
                         }
+                    } else {
+                        // TREE MODE: Expandable/Collapsible tree
+                        TreeModeView(
+                            notes = notes,
+                            folders = folders,
+                            onNoteClick = { note ->
+                                context.startActivity(
+                                    Intent(context, MainActivity::class.java)
+                                        .putExtra(MainActivity.EXTRA_NOTE_ID, note.id)
+                                        .putExtra(MainActivity.EXTRA_BOOK_ID, vm.bookId)
+                                )
+                            },
+                            onOpenFloat = { note ->
+                                context.startActivity(
+                                    Intent(context, MainActivity::class.java)
+                                        .putExtra(MainActivity.EXTRA_NOTE_ID, note.id)
+                                        .putExtra(MainActivity.EXTRA_BOOK_ID, vm.bookId)
+                                        .putExtra("openInFloat", true)
+                                )
+                            },
+                            onRename = { note -> noteToRename = note },
+                            onDuplicate = { note -> vm.duplicateNote(note.id) },
+                            onDelete = { note -> noteToDelete = note }
+                        )
                     }
                 } else {
                     BookStatisticsTab(notes = notes, bookTitle = book?.title ?: "Book")
@@ -455,13 +560,101 @@ fun BookScreen(
 }
 
 @Composable
+private fun TreeModeView(
+    notes: List<Note>,
+    folders: List<Folder>,
+    onNoteClick: (Note) -> Unit,
+    onOpenFloat: (Note) -> Unit,
+    onRename: (Note) -> Unit,
+    onDuplicate: (Note) -> Unit,
+    onDelete: (Note) -> Unit
+) {
+    val expandedFolders = remember { mutableStateMapOf<String, Boolean>() }
+
+    val folderPaths = remember(folders) {
+        folders.map { it.path }.sorted()
+    }
+
+    LazyColumn(
+        contentPadding = PaddingValues(12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        // Root Notes
+        val rootNotes = notes.filter { it.folderPath == "/" }
+        if (rootNotes.isNotEmpty()) {
+            items(rootNotes, key = { "root_${it.id}" }) { note ->
+                NoteListRow(
+                    note = note,
+                    onClick = { onNoteClick(note) },
+                    onOpenFloat = { onOpenFloat(note) },
+                    onRename = { onRename(note) },
+                    onDuplicate = { onDuplicate(note) },
+                    onDelete = { onDelete(note) }
+                )
+            }
+        }
+
+        // Subfolders
+        folderPaths.forEach { fPath ->
+            val isExpanded = expandedFolders[fPath] ?: true
+            item(key = "folder_$fPath") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { expandedFolders[fPath] = !isExpanded }
+                        .padding(vertical = 8.dp, horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        if (isExpanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        Icons.Default.Folder,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        fPath,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            if (isExpanded) {
+                val fNotes = notes.filter { it.folderPath == fPath }
+                items(fNotes, key = { "fn_${it.id}" }) { note ->
+                    NoteListRow(
+                        note = note,
+                        modifier = Modifier.padding(start = 24.dp),
+                        onClick = { onNoteClick(note) },
+                        onOpenFloat = { onOpenFloat(note) },
+                        onRename = { onRename(note) },
+                        onDuplicate = { onDuplicate(note) },
+                        onDelete = { onDelete(note) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun BookStatisticsTab(notes: List<Note>, bookTitle: String) {
     val totalWords = remember(notes) {
-        notes.sumOf { n -> n.content.split("\\s+".toRegex()).count { it.isNotBlank() } }
+        notes.sumOf { n -> MarkdownUtil.countWords(n.content) }
     }
     val scoredNotes = remember(notes) {
         notes.map { n ->
-            val count = n.content.split("\\s+".toRegex()).count { it.isNotBlank() }
+            val count = MarkdownUtil.countWords(n.content)
             n to count
         }.sortedByDescending { it.second }
     }
@@ -540,47 +733,91 @@ private fun NoteListRow(
 ) {
     var showMenu by remember { mutableStateOf(false) }
     val wordCount = remember(note.content) {
-        note.content.split("\\s+".toRegex()).count { it.isNotBlank() }
+        MarkdownUtil.countWords(note.content)
+    }
+
+    val previewText = remember(note.content) {
+        val lines = note.content.lineSequence().filter { it.isNotBlank() }.take(3).toList()
+        if (lines.isEmpty()) "No text content" else lines.joinToString("\n")
+    }
+
+    val createdStr = remember(note.createdAt) {
+        SimpleDateFormat("MMM d, yyyy · h:mm a", Locale.getDefault()).format(Date(note.createdAt))
+    }
+    val modifiedStr = remember(note.updatedAt) {
+        SimpleDateFormat("MMM d, yyyy · h:mm a", Locale.getDefault()).format(Date(note.updatedAt))
     }
 
     Card(
         modifier = modifier
             .fillMaxWidth()
             .clickable { onClick() },
-        shape = RoundedCornerShape(8.dp)
+        shape = RoundedCornerShape(12.dp)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .padding(12.dp)
-                .fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+                .fillMaxWidth()
         ) {
-            Icon(
-                Icons.Outlined.Description,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(24.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Outlined.Description,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(note.name, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text(
+                        text = "$wordCount words • ${note.folderPath}",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                Box {
+                    IconButton(onClick = { showMenu = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = null)
+                    }
+                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                        DropdownMenuItem(text = { Text("Open") }, onClick = { showMenu = false; onClick() })
+                        DropdownMenuItem(text = { Text("Open in Floating Window") }, onClick = { showMenu = false; onOpenFloat() })
+                        DropdownMenuItem(text = { Text("Rename") }, onClick = { showMenu = false; onRename() })
+                        DropdownMenuItem(text = { Text("Duplicate") }, onClick = { showMenu = false; onDuplicate() })
+                        DropdownMenuItem(text = { Text("Delete") }, onClick = { showMenu = false; onDelete() })
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // 3-line preview
+            Text(
+                text = previewText,
+                fontSize = 12.sp,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                lineHeight = 16.sp
             )
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(note.name, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // Created and Modified timestamps
+            Column {
                 Text(
-                    text = "$wordCount words • ${note.folderPath}",
-                    fontSize = 12.sp,
+                    text = "Created: $createdStr",
+                    fontSize = 10.sp,
                     color = MaterialTheme.colorScheme.outline
                 )
-            }
-            Box {
-                IconButton(onClick = { showMenu = true }) {
-                    Icon(Icons.Default.MoreVert, contentDescription = null)
-                }
-                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                    DropdownMenuItem(text = { Text("Open") }, onClick = { showMenu = false; onClick() })
-                    DropdownMenuItem(text = { Text("Open in Floating Window") }, onClick = { showMenu = false; onOpenFloat() })
-                    DropdownMenuItem(text = { Text("Rename") }, onClick = { showMenu = false; onRename() })
-                    DropdownMenuItem(text = { Text("Duplicate") }, onClick = { showMenu = false; onDuplicate() })
-                    DropdownMenuItem(text = { Text("Delete") }, onClick = { showMenu = false; onDelete() })
-                }
+                Text(
+                    text = "Modified: $modifiedStr",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.outline
+                )
             }
         }
     }

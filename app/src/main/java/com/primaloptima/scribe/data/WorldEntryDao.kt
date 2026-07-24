@@ -13,6 +13,9 @@ interface WorldEntryDao {
     @Query("SELECT * FROM world_entries ORDER BY updated_at DESC")
     fun observeAll(): Flow<List<WorldEntry>>
 
+    @Query("SELECT * FROM world_entries ORDER BY updated_at DESC")
+    suspend fun getAllSync(): List<WorldEntry>
+
     @Query("SELECT * FROM world_entries WHERE type = :type ORDER BY updated_at DESC")
     fun observeByType(type: String): Flow<List<WorldEntry>>
 

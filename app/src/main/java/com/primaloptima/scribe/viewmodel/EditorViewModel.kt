@@ -324,6 +324,29 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         updateGoal()
     }
 
+    fun saveVersionSnapshotOnLeave(content: String) {
+        val note = _activeNote.value ?: return
+        if (content.isBlank()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val words = MarkdownUtil.countWords(content)
+            db.noteVersionDao().insert(
+                com.primaloptima.scribe.data.NoteVersion(
+                    noteId = note.id,
+                    content = content,
+                    wordCount = words,
+                    timestamp = System.currentTimeMillis()
+                )
+            )
+            db.noteVersionDao().trimOldVersions(note.id)
+        }
+    }
+
+    suspend fun getNoteVersions(noteId: String): List<com.primaloptima.scribe.data.NoteVersion> {
+        return withContext(Dispatchers.IO) {
+            db.noteVersionDao().getVersions(noteId)
+        }
+    }
+
     fun flushContent(content: String) {
         autosaveJob?.cancel()
         val note = _activeNote.value ?: return

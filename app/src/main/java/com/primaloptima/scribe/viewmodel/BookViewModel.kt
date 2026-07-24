@@ -11,6 +11,7 @@ import com.primaloptima.scribe.data.Book
 import com.primaloptima.scribe.data.Folder
 import com.primaloptima.scribe.data.Note
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
@@ -32,6 +33,9 @@ class BookViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _folders = MutableLiveData<List<Folder>>(emptyList())
     val folders: LiveData<List<Folder>> = _folders
+
+    private val _worldEntries = MutableLiveData<List<com.primaloptima.scribe.data.WorldEntry>>(emptyList())
+    val worldEntries: LiveData<List<com.primaloptima.scribe.data.WorldEntry>> = _worldEntries
 
     // ── View mode ─────────────────────────────────────────────────────────────
 
@@ -65,6 +69,7 @@ class BookViewModel(application: Application) : AndroidViewModel(application) {
             val book = db.bookDao().getById(bookId)
             val notes = db.noteDao().getByBook(bookId)
             val folders = db.noteDao().getFoldersByBook(bookId)
+            val world = try { db.worldEntryDao().getAllSync() } catch (_: Exception) { emptyList() }
             val sortedNotes = when (_sortMode.value) {
                 SortMode.DATE_CREATED -> notes.sortedByDescending { it.createdAt }
                 SortMode.TITLE_AZ -> notes.sortedBy { it.name.lowercase() }
@@ -74,6 +79,7 @@ class BookViewModel(application: Application) : AndroidViewModel(application) {
                 _book.value = book
                 _notes.value = sortedNotes
                 _folders.value = folders.sortedBy { it.path }
+                _worldEntries.value = world
             }
         }
     }
